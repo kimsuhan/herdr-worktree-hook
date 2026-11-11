@@ -1,6 +1,8 @@
 #!/bin/sh
 # Self-check: real git worktrees in a temp folder, isolated from your git config and herdr config.
 set -eu
+# The system python first (3.9 on macOS), the oldest one this has to run on.
+[ ! -x /usr/bin/python3 ] || PATH="/usr/bin:$PATH"
 BIN=$(cd "$(dirname "$0")" && pwd)/bin/herdr-worktree-hook
 T=$(cd "$(mktemp -d)" && pwd -P)
 trap 'rm -rf "$T"' EXIT
@@ -18,6 +20,7 @@ git -C "$T/repo" remote add origin x
 k git@github.com:Acme/demo.git github.com/Acme/demo
 k https://github.com/Acme/demo.git github.com/Acme/demo
 k ssh://git@GitHub.com:22/Acme/demo/ github.com/Acme/demo
+k ../up "$T/up"
 git -C "$T/repo" remote set-url origin git@github.com:acme/demo.git
 
 # The main checkout: .env, .config/ and node_modules/ ignored, AGENTS.md tracked.
@@ -60,6 +63,31 @@ wait_run
 "$BIN" history --json | grep -q '"exit": 1' || fail "failed run"
 [ ! -e "$T/w3/nope" ] || fail "ran past a failure"
 
+# Leaving an unborn branch looks like a new worktree to git: the hook still runs once per worktree.
+git -C "$T/w3" switch -q --orphan o
+git -C "$T/w3" -c hook.t.event=post-checkout -c "hook.t.command=$BIN post-checkout" checkout -q w3 2>"$T/err"
+[ ! -s "$T/err" ] || fail "ran again after an orphan branch: $(cat "$T/err")"
+
+# A file that can't be read is reported; the rest is copied and the commands still run.
+"$BIN" rm github.com/acme/demo
+"$BIN" rm nope 2>/dev/null && fail "rm of a missing entry"
+printf '%s' '{"run": ["true"]}' | "$BIN" set default
+chmod 000 "$T/repo/.env"
+wt "$T/w3b" -b w3b
+chmod 600 "$T/repo/.env"
+[ -f "$T/w3b/.env.local" ] && [ ! -e "$T/w3b/.env" ] || fail "copy stopped at an unreadable file"
+grep -q 'could not copy .env (Permission denied); running 1 command' "$T/err" || fail "copy failure: $(cat "$T/err")"
+
+# run sets an existing worktree up again: what's missing is copied, what's there is kept.
+echo mine > "$T/w3b/.env.local"
+"$BIN" run "$T/w3b" | grep -q 'copied .env;' || fail "run"
+[ "$(cat "$T/w3b/.env.local")" = mine ] || fail "run overwrote a file"
+
+# A hand-edited config with a wrong type stops the setup, not git.
+echo '{"default": {"run": "echo hi"}}' > "$XDG_CONFIG_HOME/herdr/plugins/config/kimsuhan.worktree-hook/config.json"
+wt "$T/w3c" -b w3c
+grep -q 'default: run must be a list' "$T/err" || fail "wrong type in config: $(cat "$T/err")"
+
 # A broken config never fails git worktree add.
 echo '{' > "$XDG_CONFIG_HOME/herdr/plugins/config/kimsuhan.worktree-hook/config.json"
 wt "$T/w4" -b w4
@@ -69,7 +97,13 @@ grep -q 'not valid JSON' "$T/err" || fail "broken config: $(cat "$T/err")"
 git -C "$T/w4" checkout -q -b other 2>"$T/err"; [ ! -s "$T/err" ] || fail "branch checkout ran"
 "$BIN" run "$T/repo" 2>/dev/null && fail "run on main checkout"
 
-# Entries are checked before they're saved.
+# Entries are checked before they're saved (with the broken config gone, so it's the entry that's refused).
+rm "$XDG_CONFIG_HOME/herdr/plugins/config/kimsuhan.worktree-hook/config.json"
 printf '%s' '{"copy": ["../x"]}' | "$BIN" set a 2>/dev/null && fail "accepted ../"
 printf '%s' '{"cmd": []}' | "$BIN" set a 2>/dev/null && fail "accepted unknown field"
+"$BIN" history -n 2>/dev/null && fail "history -n without a number"
+
+# install and uninstall write only the (isolated) global git config.
+"$BIN" install >/dev/null; "$BIN" ls | grep -q '"installed": true' || fail "install"
+"$BIN" uninstall >/dev/null; "$BIN" ls | grep -q '"installed": false' || fail "uninstall"
 echo ok

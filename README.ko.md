@@ -22,7 +22,7 @@ herdr-worktree-hook은 worktree를 어떻게 만들었든(`git worktree add`, �
 
 ```sh
 git clone https://github.com/kimsuhan/herdr-worktree-hook
-ln -s "$PWD/herdr-worktree-hook/bin/herdr-worktree-hook" ~/.local/bin/
+mkdir -p ~/.local/bin && ln -s "$PWD/herdr-worktree-hook/bin/herdr-worktree-hook" ~/.local/bin/
 herdr-worktree-hook install
 ```
 
@@ -72,6 +72,10 @@ git worktree add ../try-it -b try-it
 
 저장소 키는 `origin` 리모트에서 프로토콜과 `.git`을 뺀 값입니다(https든 ssh든 `github.com/acme/api`).
 `origin`이 없으면 메인 체크아웃 경로를 씁니다.
+
+훅은 worktree마다 한 번만 준비합니다. 복사하지 못한 파일은 알려 주고 나머지를 계속 진행합니다.
+`config.json`이 올바르지 않으면(예: 목록 자리에 문자열) 메시지를 남기고 준비를 멈추지만,
+`git worktree add`는 그대로 성공합니다. 실행 기록은 최근 100개만 남깁니다.
 
 파일을 직접 고치거나 명령으로 바꿀 수 있습니다.
 

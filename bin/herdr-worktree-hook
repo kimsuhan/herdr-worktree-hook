@@ -64,6 +64,9 @@ def repo(path):
     url = git(top, "config", "--get", "remote.origin.url")
     # A bare repo's worktrees have no main checkout to copy from.
     main = os.path.dirname(common) if os.path.basename(common) == ".git" else None
+    # A relative origin (../upstream) names a different repo from each checkout.
+    if url and url.startswith("."):
+        url = os.path.abspath(os.path.join(main or top, url))
     return {
         "top": top,
         "main": main,
@@ -76,11 +79,17 @@ def repo(path):
 def load():
     try:
         with open(CONFIG) as f:
-            return json.load(f)
+            cfg = json.load(f)
     except FileNotFoundError:
         return {}
     except ValueError as e:
         fail(f"{CONFIG} is not valid JSON: {e}")
+    # Edited by hand too: a string where a list belongs would run one command per letter.
+    if not isinstance(cfg, dict) or not isinstance(cfg.get("repos", {}), dict):
+        fail(f"{CONFIG}: the top level and repos are objects")
+    for name, e in [("default", cfg.get("default", {})), *cfg.get("repos", {}).items()]:
+        check_entry(e, f"{CONFIG}: {name}")
+    return cfg
 
 
 def save(cfg):
@@ -109,7 +118,8 @@ def merge(src, dst):
 
 
 def copy(r, patterns):
-    done = []
+    """Returns what was copied and what couldn't be: one unreadable file must not stop the rest."""
+    done, failed = [], []
     for pat in patterns:
         folder = pat.endswith("/")
         for src in sorted(glob.glob(os.path.join(glob.escape(r["main"]), pat.rstrip("/")))):
@@ -120,15 +130,19 @@ def copy(r, patterns):
             # Only what git ignores: never shadow or add to what the branch tracks.
             if subprocess.run(["git", "check-ignore", "-q", "--", rel + ("/" if folder else "")], cwd=r["top"]).returncode:
                 continue
-            if folder:
-                merge(src, dst)
-            elif not os.path.lexists(dst):
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                shutil.copy2(src, dst, follow_symlinks=False)
-            else:
+            try:
+                if folder:
+                    merge(src, dst)
+                elif not os.path.lexists(dst):
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.copy2(src, dst, follow_symlinks=False)
+                else:
+                    continue
+            except OSError as e:
+                failed.append(f"{rel} ({e.strerror or e})")
                 continue
             done.append(rel + ("/" if folder else ""))
-    return done
+    return done, failed
 
 
 def record(rid, rec=None):
@@ -144,14 +158,22 @@ def record(rid, rec=None):
 def setup(r):
     """Copy now, start the commands in the background; return a one-line summary."""
     e = entry(load(), r["key"])
-    copied = copy(r, e["copy"]) if r["main"] else []
+    copied, failed = copy(r, e["copy"]) if r["main"] else ([], [])
     names = [n for n in (r["branch"], os.path.basename(r["top"])) if n]
     skipped = any(fnmatch.fnmatch(n, p) for p in e["skip_run"] for n in names)
     out = [f"copied {', '.join(copied)}" if copied else "nothing to copy"]
+    if failed:
+        out.append(f"could not copy {', '.join(failed)}")
     if e["run"] and skipped:
         out.append("run skipped (skip_run)")
     elif e["run"]:
         os.makedirs(RUNS, exist_ok=True)
+        # Keep the newest 100 runs (a record and a log each); names start with the time.
+        for old in sorted(os.listdir(RUNS), reverse=True)[200:]:
+            try:
+                os.remove(os.path.join(RUNS, old))
+            except OSError:
+                pass
         rid = time.strftime("%Y%m%d-%H%M%S-") + str(os.getpid())
         log = os.path.join(RUNS, rid + ".log")
         record(rid, {"id": rid, "repo": r["key"], "path": r["top"], "main": r["main"], "branch": r["branch"],
@@ -220,15 +242,15 @@ def git_version():
     return tuple(int(x) for x in v[2].split(".")[:2]) if len(v) > 2 else (0, 0)
 
 
-def check_entry(e):
+def check_entry(e, name):
     if not isinstance(e, dict) or set(e) - set(FIELDS):
-        fail(f"an entry is an object with only {', '.join(FIELDS)}")
+        fail(f"{name}: an entry is an object with only {', '.join(FIELDS)}")
     for k, v in e.items():
         if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
-            fail(f"{k} must be a list of non-empty strings")
+            fail(f"{name}: {k} must be a list of non-empty strings")
     for p in e.get("copy", []):
         if os.path.isabs(p) or ".." in p.split("/"):
-            fail(f"copy paths stay inside the repo: {p}")
+            fail(f"{name}: copy paths stay inside the repo: {p}")
 
 
 def main(argv):
@@ -239,7 +261,11 @@ def main(argv):
             return
         try:
             r = repo(".")
-            if r["linked"]:
+            # Leaving an unborn branch (git switch --orphan) checks out from the null commit too:
+            # a marker in the worktree's git dir keeps the hook to once per worktree.
+            mark = os.path.join(git(".", "rev-parse", "--absolute-git-dir"), "herdr-worktree-hook")
+            if r["linked"] and not os.path.exists(mark):
+                open(mark, "w").close()
                 print(f"herdr-worktree-hook: {setup(r)}", file=sys.stderr)
         except (Exception, SystemExit) as e:
             print(e if isinstance(e, SystemExit) else f"herdr-worktree-hook: {e}", file=sys.stderr)
@@ -272,7 +298,7 @@ def main(argv):
                 e = json.load(sys.stdin)
             except ValueError as err:
                 fail(f"stdin is not valid JSON: {err}")
-            check_entry(e)
+            check_entry(e, args[0])
             if args[0] == "default":
                 cfg["default"] = e
             else:
@@ -283,7 +309,10 @@ def main(argv):
             fail(f"no entry for {args[0]}")
         return save(cfg)
     if cmd == "history":
-        n = int(args[args.index("-n") + 1]) if "-n" in args else 20
+        try:
+            n = int(args[args.index("-n") + 1]) if "-n" in args else 20
+        except (IndexError, ValueError):
+            fail("usage: history [--json] [-n N]")
         hist = runs(n)
         if "--json" in args:
             return print(json.dumps(hist, indent=2, ensure_ascii=False))
@@ -293,8 +322,10 @@ def main(argv):
     if cmd == "install":
         if git_version() < (2, 54):
             fail("needs git 2.54 or newer (hooks set in git config)")
-        git(".", "config", "--global", "--replace-all", f"{HOOK}.event", "post-checkout")
-        git(".", "config", "--global", "--replace-all", f"{HOOK}.command", f"{shlex.quote(os.path.realpath(__file__))} post-checkout")
+        command = f"{shlex.quote(os.path.realpath(__file__))} post-checkout"
+        if None in (git(".", "config", "--global", "--replace-all", f"{HOOK}.event", "post-checkout"),
+                    git(".", "config", "--global", "--replace-all", f"{HOOK}.command", command)):
+            fail("could not write the global git config")
         return print(f"installed: {HOOK} runs on post-checkout\nconfig: {CONFIG}")
     if cmd == "uninstall":
         git(".", "config", "--global", "--remove-section", HOOK)

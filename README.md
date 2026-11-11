@@ -22,7 +22,7 @@ pull request you check out can't change what runs.
 
 ```sh
 git clone https://github.com/kimsuhan/herdr-worktree-hook
-ln -s "$PWD/herdr-worktree-hook/bin/herdr-worktree-hook" ~/.local/bin/
+mkdir -p ~/.local/bin && ln -s "$PWD/herdr-worktree-hook/bin/herdr-worktree-hook" ~/.local/bin/
 herdr-worktree-hook install
 ```
 
@@ -72,6 +72,10 @@ Without a config file, every repo copies `.env` and `.env.*` and runs nothing.
 
 A repo's key is its `origin` remote without the scheme and `.git` (`github.com/acme/api`, whether
 the remote is https or ssh), or the main checkout's path when there's no `origin`.
+
+The hook sets a worktree up once. A file that can't be copied is reported and the rest goes on.
+A `config.json` that isn't valid (a string where a list belongs, say) stops the setup with a message;
+`git worktree add` still succeeds. The newest 100 runs are kept.
 
 Edit the file by hand, or from the command line:
 

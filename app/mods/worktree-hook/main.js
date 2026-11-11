@@ -5,7 +5,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
-import { exec, home, theme, settings, spaces, notify, readTextFile, watchFolder } from "herdr";
+import { exec, home, theme, settings, spaces, panes, focused, notify, readTextFile, watchFolder } from "herdr";
 
 const BIN = "herdr-worktree-hook";
 const FIELDS = [
@@ -30,6 +30,8 @@ export default class WorktreeHook extends View {
     this.runs = []; // `history --json`
     this.repo = null; // `show` of the shown space's folder
     this.folder = undefined;
+    this.seen = {}; // space id: the last terminal folder focused in it
+    this.seq = 0;
     this.view = "main"; // main | form
     this.open = null; // the run whose log is shown
     this.known = null; // run ids already seen, to toast only new failures
@@ -64,11 +66,27 @@ export default class WorktreeHook extends View {
     await this.show(cx);
   }
 
-  async show(cx) {
+  // Where the shown space is now. Its stored folder is only where it was made, so the focused terminal
+  // comes first, then the last one focused in it (clicking this panel takes the focus), then its first.
+  here() {
     const sp = spaces().find((s) => s.active);
-    this.folder = sp && !sp.machine ? sp.folder || home() : null;
-    this.remote = Boolean(sp?.machine);
-    try { this.repo = this.folder && this.bin ? JSON.parse(await this.cli(["show", this.folder])) : null; } catch { this.repo = null; }
+    if (!sp || sp.machine) return { remote: Boolean(sp?.machine), folder: null };
+    const cwd = focused()?.cwd;
+    if (cwd) this.seen[sp.id] = cwd;
+    const tabs = new Set(sp.tabs.map((c) => c.id));
+    const first = () => panes().find((p) => tabs.has(p.tab) && p.cwd)?.cwd;
+    return { remote: false, folder: this.seen[sp.id] || first() || sp.folder || home() };
+  }
+
+  async show(cx) {
+    const { remote, folder } = this.here(), seq = ++this.seq;
+    this.folder = folder;
+    let repo = null;
+    try { repo = folder && this.bin ? JSON.parse(await this.cli(["show", folder])) : null; } catch {}
+    // An older answer arriving late must not replace a newer one.
+    if (seq !== this.seq) return;
+    this.remote = remote;
+    this.repo = repo;
     cx.notify();
   }
 
@@ -80,6 +98,8 @@ export default class WorktreeHook extends View {
         for (;;) {
           try { await watchFolder(dir); } catch { return cx.timer.every(5000, (cx) => this.refresh(cx)); }
           await this.refresh(cx);
+          // A run writing its log is a stream of changes: at most one refresh a second.
+          await cx.sleep(1000);
         }
       });
     }
@@ -113,9 +133,9 @@ export default class WorktreeHook extends View {
   edit(key, cx) {
     const own = key === "default" ? this.list?.default : this.list?.repos?.[key];
     const inherited = key === "default" ? this.list?.builtin : { ...this.list?.builtin, ...this.list?.default };
-    this.form = { key, note: null };
+    this.form = { key, note: null, own };
     for (const [f] of FIELDS) {
-      const s = TextareaState.new({ value: (own?.[f] ?? []).join("\n"), placeholder: (inherited?.[f] ?? []).join("\n") || "(none)" });
+      const s = TextareaState.new({ value: (own?.[f] ?? []).join("\n"), placeholder: (own?.[f] ? "" : (inherited?.[f] ?? []).join("\n")) || "(none)" });
       s.set_auto_grow(2, 10);
       this.form[f] = s;
     }
@@ -123,12 +143,13 @@ export default class WorktreeHook extends View {
     cx.notify();
   }
 
-  // An empty field is left out, so it follows the default.
+  // An empty field is left out, so it follows the default. One saved as an empty list (only the CLI
+  // or the file can) stays one: it's how a repo turns the default's commands off.
   save(cx) {
     const f = this.form, entry = {};
     for (const [k] of FIELDS) {
       const lines = f[k].value().split("\n").map((l) => l.trim()).filter(Boolean);
-      if (lines.length) entry[k] = lines;
+      if (lines.length || f.own?.[k]) entry[k] = lines;
     }
     cx.spawn(async (cx) => {
       // exec has no stdin: hand the JSON over through the shell.
@@ -143,8 +164,7 @@ export default class WorktreeHook extends View {
 
   render(cx) {
     const t = theme();
-    const sp = spaces().find((s) => s.active);
-    const folder = sp && !sp.machine ? sp.folder || home() : null;
+    const folder = this.here().folder;
     if (this.bin && folder !== this.folder) { this.folder = folder; cx.spawn(async (cx) => this.show(cx)); }
     return v_flex().id("worktree-hook").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background)
       .border_1().border_color(t.border).text_color(t.foreground).text_size(13)
@@ -212,9 +232,9 @@ export default class WorktreeHook extends View {
       .child(h_flex().gap(6).flex_wrap().pt(2)
         .child(this.button("edit", r.own ? "Edit" : "Customize", t, (cx) => this.edit(r.key, cx)))
         .when(r.linked, (el) => el.child(this.button("rerun", "Set up again", t, (cx) => this.act(cx, ["run", r.top]))))
-        .when(Boolean(r.own), (el) => el.child(this.button("rm", this.removing ? "Confirm reset" : "Reset to default", t, (cx) => {
-          if (!this.removing) { this.removing = true; cx.notify(); return; }
-          this.removing = false;
+        .when(Boolean(r.own), (el) => el.child(this.button("rm", this.removing === r.key ? "Confirm reset" : "Reset to default", t, (cx) => {
+          if (this.removing !== r.key) { this.removing = r.key; cx.notify(); return; }
+          this.removing = null;
           this.act(cx, ["rm", r.key]);
         }, { danger: true }))));
   }

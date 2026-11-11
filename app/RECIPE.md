@@ -15,7 +15,7 @@ or the panel shows only an error:
 
 ```sh
 git clone https://github.com/kimsuhan/herdr-worktree-hook
-ln -s "$PWD/herdr-worktree-hook/bin/herdr-worktree-hook" ~/.local/bin/
+mkdir -p ~/.local/bin && ln -s "$PWD/herdr-worktree-hook/bin/herdr-worktree-hook" ~/.local/bin/
 herdr-worktree-hook install     # the global post-checkout hook
 ```
 
@@ -70,7 +70,9 @@ Top to bottom:
   there's none). Clicking again closes it.
 - `Customize`, `Edit` and a `SETTINGS` row open the form for that key. Each field is filled with the
   key's own value only; `Save` leaves out empty fields, so they follow `default` (or the built-in
-  `.env`, `.env.*`), and goes back to the list. `Cancel` and `‹` go back without saving.
+  `.env`, `.env.*`), and goes back to the list. A field the CLI or the file saved as an empty list
+  (a repo turning the default's commands off) shows "(none)" and stays an empty list while it's left
+  empty; `Reset to default` is how to drop it. `Cancel` and `‹` go back without saving.
 - `Set up again` runs the copy and the commands for the shown worktree now. `Install` registers the
   hook. Any of them failing shows the CLI's message in the error line.
 - A run that fails after the panel opened posts a notification: "Worktree setup failed: <branch>",
@@ -89,7 +91,7 @@ Top to bottom:
   - `version`: is it on PATH;
   - `ls`: `{config, state, installed, git, builtin, default, repos}`;
   - `history --json -n 30`: runs `{id, repo, path, branch, status, exit, started, log}`;
-  - `show <folder>`: `{key, top, linked, branch, own, entry}`, `entry` being the settings in effect;
+  - `show <folder>`: `{key, top, main, linked, branch, own, entry}`, `entry` being the settings in effect;
   - `set <key>` (JSON on stdin), `rm <key>`, `run <worktree>`, `install`.
   A failure exits nonzero with `herdr-worktree-hook: <message>` on stderr; show the message without
   the prefix.
@@ -100,7 +102,10 @@ Top to bottom:
 - Find the CLI once at start: `herdr-worktree-hook version` on PATH, else `~/.local/bin/herdr-worktree-hook`.
   If neither works then, the panel keeps the error until it reloads.
 - Watch the folder of `ls`'s `config` and its `state` folder with `watchFolder` and reload on each
-  change; a folder that doesn't exist yet rejects the watch, so poll every 5 seconds instead.
+  change, then `cx.sleep(1000)`: a run writing its log is a stream of changes. A folder that doesn't
+  exist yet rejects the watch, so poll every 5 seconds instead.
+- `Confirm reset` belongs to one repo: remember its key, not a flag, or switching spaces leaves another
+  repo one click from losing its settings.
 - The shown space changes without a command: compare its folder in `render` and fetch `show` only
   when it differs, or every render starts another `exec`.
 - Spaces on another machine (`space.machine`) are not supported: the CLI and its files are local.
