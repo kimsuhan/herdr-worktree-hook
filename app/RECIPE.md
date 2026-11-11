@@ -75,8 +75,10 @@ Top to bottom:
 
 ## How it behaves
 
-- Follows the shown space: switching spaces shows that space's repo. A space with an empty folder is
-  home. Agent statuses don't change anything here.
+- Follows where the shown space is working: the folder of its focused terminal, else of the terminal
+  last focused in it, else of its first terminal, else the space's own folder, else home. Switching
+  spaces, or focusing a terminal in another checkout, shows that repo. Agent statuses don't change
+  anything here.
 - Clicking a run row opens its log under it on a `raised` block with a `border`: the `folder` icon and
   the worktree path (`~/...`) in 11px `dim`, a line, then the last 80 lines of the log in the terminal
   font, 11px `muted` ("(empty log)" when there's none). Clicking again closes it.
@@ -100,8 +102,11 @@ Top to bottom:
   `worktree-hook.svg`, a 24×24 stroked icon (two commits on a branch line, a third off to the side, a
   check mark) for a tab bar button. No layout and no keys.
 - `gpui-kit` (`View`, `div`, `svg`), `gpui-base` (`v_flex`, `h_flex`, `TextareaState`, `Textarea`).
-- `herdr`: `exec`, `home`, `theme`, `settings`, `spaces`, `notify`, `readTextFile`, `watchFolder`.
-  The running spinner is the shipped `mods/workspace-chrome/spinner.svg` with `.spin(900)`.
+- `herdr`: `exec`, `home`, `theme`, `settings`, `spaces`, `panes`, `focused`, `notify`,
+  `readTextFile`, `watchFolder`.
+- Art: besides its own icon, Herdr's from the shipped `mods/workspace-chrome/`: `git-branch`,
+  `square-pen`, `folder`, `chevron-left`, `chevron-right`, `chevron-down`, and `spinner` with
+  `.spin(900)` while a run is going.
 - The CLI, all JSON on stdout:
   - `version`: is it on PATH;
   - `ls`: `{config, state, installed, git, builtin, default, repos}`;
@@ -121,8 +126,9 @@ Top to bottom:
   exist yet rejects the watch, so poll every 5 seconds instead.
 - `Confirm reset` belongs to the open form: keep the flag on the form's state, not on the view, or it
   outlives the entry it was clicked for.
-- Icons other than the mod's own are Herdr's, from `mods/workspace-chrome/`: `git-branch`, `square-pen`,
-  `folder`, `chevron-left`, `chevron-right`, `chevron-down`, `spinner`.
+- A space's `folder` is only where it was made; a worktree opened in it later is found through its
+  terminals' `cwd`. Clicking the panel takes the focus away from the terminal, so remember the last
+  focused folder per space. Two `show` calls can answer out of order: drop the older answer.
 - The shown space changes without a command: compare its folder in `render` and fetch `show` only
   when it differs, or every render starts another `exec`.
 - Spaces on another machine (`space.machine`) are not supported: the CLI and its files are local.
