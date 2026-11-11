@@ -54,7 +54,7 @@ computer for now.
 - `skip_run`: patterns for the branch or the worktree's folder name that skip `run`.
 
 A repo's entry overrides `default` field by field; without either, `copy` is
-`.env`, `.env.*`, `CLAUDE.md`, `AGENTS.md`, `.local/`, `.config/`, `.codex/`, `.wiki/` and nothing runs.
+`.env` and `.env.*`, and nothing runs.
 Find a repo's key with `herdr-worktree-hook key`, edit with `herdr-worktree-hook set <key> < entry.json`.
 
 ## Runs

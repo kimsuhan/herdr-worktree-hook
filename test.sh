@@ -30,9 +30,15 @@ echo untracked > notes.txt
 
 # No config: the builtin copy list, no commands.
 wt "$T/w1" -b w1
-[ -f "$T/w1/.env" ] && [ -f "$T/w1/.env.local" ] && [ -f "$T/w1/.config/sub/f" ] || fail "builtin copy"
-[ ! -e "$T/w1/notes.txt" ] && [ ! -e "$T/w1/node_modules" ] || fail "copied what it shouldn't"
-grep -q 'copied .env, .env.local, .config/' "$T/err" || fail "summary: $(cat "$T/err")"
+[ -f "$T/w1/.env" ] && [ -f "$T/w1/.env.local" ] || fail "builtin copy"
+[ ! -e "$T/w1/notes.txt" ] && [ ! -e "$T/w1/node_modules" ] && [ ! -e "$T/w1/.config" ] || fail "copied what it shouldn't"
+grep -q 'copied .env, .env.local$' "$T/err" || fail "summary: $(cat "$T/err")"
+
+# "default" applies to every repo without its own entry.
+printf '%s' '{"copy": [".config/"]}' | "$BIN" set default
+wt "$T/w1b" -b w1b
+[ -f "$T/w1b/.config/sub/f" ] && [ ! -e "$T/w1b/.env" ] || fail "default entry"
+"$BIN" rm default
 
 # A repo entry: its copy replaces the builtin one, commands run in the background with WT_* set.
 printf '%s' '{"copy": ["node_modules/", ".env"], "run": ["echo \"$WT_BRANCH from $WT_REPO_ROOT\" > ran", "pwd >> ran"], "skip_run": ["review-*"]}' | "$BIN" set github.com/acme/demo

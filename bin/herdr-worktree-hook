@@ -31,7 +31,7 @@ STATE = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.
 RUNS = os.path.join(STATE, "runs")
 FIELDS = ("copy", "run", "skip_run")
 # What a repo gets when neither its entry nor "default" says otherwise.
-BUILTIN = {"copy": [".env", ".env.*", "CLAUDE.md", "AGENTS.md", ".local/", ".config/", ".codex/", ".wiki/"], "run": [], "skip_run": []}
+BUILTIN = {"copy": [".env", ".env.*"], "run": [], "skip_run": []}
 
 
 def fail(msg):
