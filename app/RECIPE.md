@@ -1,0 +1,122 @@
+# Worktree Hook
+
+A side panel for [herdr-worktree-hook](https://github.com/kimsuhan/herdr-worktree-hook), the git hook
+that sets up every new worktree: it copies files such as `.env` from the main checkout and runs setup
+commands such as `yarn install` in the background. The panel shows what a new worktree of the shown
+space's repo gets, lets you change it per repo or for every repo, sets a worktree up again, and lists
+recent runs with their logs. A failed run posts a notification.
+
+![Worktree Hook](preview.png)
+
+## Before you add it
+
+The panel is the face of the `herdr-worktree-hook` CLI (python3, git 2.54 or newer). Install it first,
+or the panel shows only an error:
+
+```sh
+git clone https://github.com/kimsuhan/herdr-worktree-hook
+ln -s "$PWD/herdr-worktree-hook/bin/herdr-worktree-hook" ~/.local/bin/
+herdr-worktree-hook install     # the global post-checkout hook
+```
+
+The mod **runs programs**: `herdr-worktree-hook` for every read and write, and `sh` to pipe JSON into
+it. It **reads files outside its folder**: the run logs under
+`~/.local/state/herdr/plugins/kimsuhan.worktree-hook/runs/`. It reaches no network and writes no file
+itself.
+
+## What you see
+
+A card filling its block: `rounded(10)`, 1px `border`, `background`, 13px text in `foreground`.
+Top to bottom:
+
+- **Header**, 42px, 14px side padding, bottom border: "Worktree Hook" (semibold), then at the right in
+  11px "git 2.54" (`dim`, the git version) or "not installed" (`blocked`). In the form view a `‹`
+  button comes first.
+- **Banner**, only while the hook isn't in git config: `blocked` at 13% alpha (`+ "22"`), 12px text
+  "The git hook isn't installed: new worktrees aren't set up." wrapping beside a solid `Install` button.
+- **Error line**, only when the CLI failed: 12px `ansi1`, 14px side padding.
+- **Body**, scrolling, either the list or the form.
+  - **List.** Section labels in 11px semibold `dim` caps, 12px above and 4px below:
+    - `THIS REPO`: one `raised` block (8px margin, 8×6 padding, `rounded(7)`): the repo key
+      (`github.com/org/repo`, semibold), under it in 11px `muted`
+      "worktree · feature-x · own settings" (or "main checkout", "default settings"). Then three rows,
+      a 64px `dim` label and the values one per line in the terminal font (`settings().font_family`)
+      at 11.5px, or "—" when empty: `copy`, `run`, `skip run`. Then buttons, 26px high, `raised`
+      with a `border`: `Customize` (no settings of its own) or `Edit`; `Set up again` only in a linked
+      worktree; `Reset to default` in `ansi1` text only when it has its own settings, which turns into
+      `Confirm reset` on the first click. Instead of the block, 12px `dim` text says
+      "Spaces on other machines aren't supported yet." or "The shown space isn't in a git checkout."
+    - `RECENT RUNS`: up to 30 rows, newest first, 8px margin, 8×5 padding, `hover` background:
+      a 7px dot (`ansi2` ok, `ansi1` failed, `dim` lost) or, while running, the spinner in `working`;
+      the branch (or the worktree's folder name when detached) over the repo key in 11px `dim`; at the
+      right the status in the dot's color ("ok", "running", "lost", or "exit 1"), then "5m ago" in
+      `dim`. Empty: "No runs yet."
+    - `SETTINGS`: a row for `default` ("Every repo without its own" under it) and one per repo that has
+      its own entry, other than the one above, with its commands joined by " && " under it, or
+      "copy only".
+  - **Form.** The key in 15px semibold, or "Default settings". An 11px `dim` hint: "An empty field
+    follows the default settings, shown in grey." (for `default`: "...keeps the built-in value...").
+    Then `COPY`, `RUN`, `SKIP RUN`, each an 11px label, a textarea (8px padding, `input` border,
+    terminal font at 12px, growing from 2 to 10 rows) and an 11px `dim` help line. Placeholders show
+    the value it would inherit, one per line. A problem shows in 12px `ansi1`. `Cancel` and a solid
+    `Save` at the right.
+
+## How it behaves
+
+- Follows the shown space: switching spaces shows that space's repo. A space with an empty folder is
+  home. Agent statuses don't change anything here.
+- Clicking a run row opens its log under it on a `raised` block: the worktree path (`~/...`) in 11px
+  `dim`, then the last 80 lines of the log in the terminal font, 11px `muted` ("(empty log)" when
+  there's none). Clicking again closes it.
+- `Customize`, `Edit` and a `SETTINGS` row open the form for that key. Each field is filled with the
+  key's own value only; `Save` leaves out empty fields, so they follow `default` (or the built-in
+  `.env`, `.env.*`), and goes back to the list. `Cancel` and `‹` go back without saving.
+- `Set up again` runs the copy and the commands for the shown worktree now. `Install` registers the
+  hook. Any of them failing shows the CLI's message in the error line.
+- A run that fails after the panel opened posts a notification: "Worktree setup failed: <branch>",
+  body "exit 1 · <repo key>", level error. Runs that had failed before it opened don't.
+- Changes made elsewhere (the CLI, editing `config.json`, a new worktree) show up by themselves.
+
+## Built from
+
+- One mod, `mods/worktree-hook/`: `main.js`, `mod.json` (`{ "place": "right", "size": 340 }`) and
+  `worktree-hook.svg`, a 24×24 stroked icon (two commits on a branch line, a third off to the side, a
+  check mark) for a tab bar button. No layout and no keys.
+- `gpui-kit` (`View`, `div`, `svg`), `gpui-base` (`v_flex`, `h_flex`, `TextareaState`, `Textarea`).
+- `herdr`: `exec`, `home`, `theme`, `settings`, `spaces`, `notify`, `readTextFile`, `watchFolder`.
+  The running spinner is the shipped `mods/workspace-chrome/spinner.svg` with `.spin(900)`.
+- The CLI, all JSON on stdout:
+  - `version`: is it on PATH;
+  - `ls`: `{config, state, installed, git, builtin, default, repos}`;
+  - `history --json -n 30`: runs `{id, repo, path, branch, status, exit, started, log}`;
+  - `show <folder>`: `{key, top, linked, branch, own, entry}`, `entry` being the settings in effect;
+  - `set <key>` (JSON on stdin), `rm <key>`, `run <worktree>`, `install`.
+  A failure exits nonzero with `herdr-worktree-hook: <message>` on stderr; show the message without
+  the prefix.
+
+## Watch out
+
+- `exec` has no stdin: save with `exec("sh", ["-c", 'printf %s "$2" | "$1" set "$3"', "sh", bin, json, key])`.
+- Find the CLI once at start: `herdr-worktree-hook version` on PATH, else `~/.local/bin/herdr-worktree-hook`.
+  If neither works then, the panel keeps the error until it reloads.
+- Watch the folder of `ls`'s `config` and its `state` folder with `watchFolder` and reload on each
+  change; a folder that doesn't exist yet rejects the watch, so poll every 5 seconds instead.
+- The shown space changes without a command: compare its folder in `render` and fetch `show` only
+  when it differs, or every render starts another `exec`.
+- Spaces on another machine (`space.machine`) are not supported: the CLI and its files are local.
+- Buttons inside the `raised` repo block are `raised` too, so they barely stand out.
+- The mod only reads and edits; copying and running happen in the git hook, outside Herdr.
+
+## Done when
+
+- `herdr-app check` passes.
+- Without the hook in git config, the banner shows; `Install` makes it go and the header says
+  "git 2.54" (or newer).
+- In a space inside a git repo, `THIS REPO` shows its `origin` key and `.env`, `.env.*` under `copy`;
+  in a space at home it says the space isn't in a git checkout.
+- `Customize`, a line `echo hi` under `RUN`, `Save`: the block says "own settings" and `run` shows
+  `echo hi`; `herdr-worktree-hook show` agrees.
+- `git worktree add` in that repo adds a `RECENT RUNS` row that turns from the spinner to a green
+  "ok"; clicking it shows `$ echo hi` and `hi`.
+- A `RUN` of `false` makes the next worktree's row red "exit 1" and posts the notification.
+- `Reset to default`, then `Confirm reset`: back to "default settings".
