@@ -16,7 +16,7 @@ herdr-worktree-hook은 worktree를 어떻게 만들었든(`git worktree add`, �
 
 - git 2.54 이상 (git config로 훅을 등록합니다)
 - python3
-- macOS 또는 Linux (macOS에서 테스트했습니다)
+- macOS 또는 Linux (둘 다 CI에서 테스트합니다. Herdr 패널은 macOS에서만 확인했습니다)
 
 ## 설치
 

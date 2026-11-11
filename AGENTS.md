@@ -53,5 +53,6 @@ checkout, run setup commands in the background), plus a Herdr app panel for it. 
 ## Known gaps
 
 - If the CLI isn't found when the panel starts, it keeps the error until the mod reloads.
-- Spaces on other machines aren't supported; Linux is untested.
+- Spaces on other machines aren't supported. CI runs `test.sh` on macOS and Ubuntu, so the CLI is
+  tested on Linux; the panel isn't.
 - `install` writes this clone's absolute path into `~/.gitconfig`: moving the clone needs `install` again.

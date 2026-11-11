@@ -16,7 +16,7 @@ pull request you check out can't change what runs.
 
 - git 2.54 or newer (hooks set in git config)
 - python3
-- macOS or Linux (tested on macOS)
+- macOS or Linux (both tested in CI; the Herdr panel only on macOS)
 
 ## Install
 
