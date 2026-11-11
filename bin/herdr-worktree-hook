@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""herdr-worktree-hook: set up a new git worktree. Copy local files from the main checkout,
+then run setup commands (yarn install, ...) in the background.
+
+  post-checkout OLD NEW FLAG   git hook entry, registered by `install`
+  run [PATH]                   set up an existing worktree now (default: current folder)
+  key [PATH]                   the repo key config.json uses for PATH
+  show [PATH]                  that repo as JSON: key, checkout, its own entry and the one in effect
+  ls [--json]                  config, state, install status and every entry
+  set KEY < entry.json         save one repo's entry ("default" for every repo)
+  rm KEY                       remove one repo's entry
+  history [--json] [-n N]      recent runs, newest first
+  install | uninstall          register the git hook globally (git 2.54 or newer)
+  version
+"""
+import fnmatch
+import glob
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+
+VERSION = "0.1.0"
+ID = "kimsuhan.worktree-hook"
+HOOK = "hook.herdr-worktree-hook"
+CONFIG = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "herdr/plugins/config", ID, "config.json")
+STATE = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "herdr/plugins", ID)
+RUNS = os.path.join(STATE, "runs")
+FIELDS = ("copy", "run", "skip_run")
+# What a repo gets when neither its entry nor "default" says otherwise.
+BUILTIN = {"copy": [".env", ".env.*", "CLAUDE.md", "AGENTS.md", ".local/", ".config/", ".codex/", ".wiki/"], "run": [], "skip_run": []}
+
+
+def fail(msg):
+    sys.exit(f"herdr-worktree-hook: {msg}")
+
+
+def git(cwd, *args):
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def key_of(url):
+    """github.com/org/repo for https, ssh and scp-like (git@host:org/repo.git) remotes."""
+    u = url.strip()
+    if "://" in u:
+        u = u.split("://", 1)[1]
+    elif ":" in u.split("/", 1)[0]:
+        u = u.replace(":", "/", 1)
+    host, _, path = u.partition("/")
+    host = host.rsplit("@", 1)[-1].split(":")[0].lower()
+    path = path.strip("/")
+    return f"{host}/{path[:-4] if path.endswith('.git') else path}"
+
+
+def repo(path):
+    top = git(path, "rev-parse", "--show-toplevel")
+    if top is None:
+        fail(f"not a git checkout: {path}")
+    common = git(top, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    url = git(top, "config", "--get", "remote.origin.url")
+    # A bare repo's worktrees have no main checkout to copy from.
+    main = os.path.dirname(common) if os.path.basename(common) == ".git" else None
+    return {
+        "top": top,
+        "main": main,
+        "linked": git(top, "rev-parse", "--absolute-git-dir") != common,
+        "key": key_of(url) if url else (main or common),
+        "branch": git(top, "branch", "--show-current") or "",
+    }
+
+
+def load():
+    try:
+        with open(CONFIG) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except ValueError as e:
+        fail(f"{CONFIG} is not valid JSON: {e}")
+
+
+def save(cfg):
+    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+    with open(CONFIG + ".tmp", "w") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(CONFIG + ".tmp", CONFIG)
+
+
+def entry(cfg, key):
+    e = dict(BUILTIN)
+    e.update(cfg.get("default", {}))
+    e.update(cfg.get("repos", {}).get(key, {}))
+    return e
+
+
+def merge(src, dst):
+    """Copy a folder's files into dst, keeping every file dst already has."""
+    for d, dirs, files in os.walk(src):
+        out = os.path.join(dst, os.path.relpath(d, src))
+        os.makedirs(out, exist_ok=True)
+        for n in files + [x for x in dirs if os.path.islink(os.path.join(d, x))]:
+            if not os.path.lexists(os.path.join(out, n)):
+                shutil.copy2(os.path.join(d, n), os.path.join(out, n), follow_symlinks=False)
+
+
+def copy(r, patterns):
+    done = []
+    for pat in patterns:
+        folder = pat.endswith("/")
+        for src in sorted(glob.glob(os.path.join(glob.escape(r["main"]), pat.rstrip("/")))):
+            rel = os.path.relpath(src, r["main"])
+            dst = os.path.join(r["top"], rel)
+            if folder != (os.path.isdir(src) and not os.path.islink(src)):
+                continue
+            # Only what git ignores: never shadow or add to what the branch tracks.
+            if subprocess.run(["git", "check-ignore", "-q", "--", rel + ("/" if folder else "")], cwd=r["top"]).returncode:
+                continue
+            if folder:
+                merge(src, dst)
+            elif not os.path.lexists(dst):
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst, follow_symlinks=False)
+            else:
+                continue
+            done.append(rel + ("/" if folder else ""))
+    return done
+
+
+def record(rid, rec=None):
+    path = os.path.join(RUNS, rid + ".json")
+    if rec is None:
+        with open(path) as f:
+            return json.load(f)
+    with open(path + ".tmp", "w") as f:
+        json.dump(rec, f, ensure_ascii=False)
+    os.replace(path + ".tmp", path)
+
+
+def setup(r):
+    """Copy now, start the commands in the background; return a one-line summary."""
+    e = entry(load(), r["key"])
+    copied = copy(r, e["copy"]) if r["main"] else []
+    names = [n for n in (r["branch"], os.path.basename(r["top"])) if n]
+    skipped = any(fnmatch.fnmatch(n, p) for p in e["skip_run"] for n in names)
+    out = [f"copied {', '.join(copied)}" if copied else "nothing to copy"]
+    if e["run"] and skipped:
+        out.append("run skipped (skip_run)")
+    elif e["run"]:
+        os.makedirs(RUNS, exist_ok=True)
+        rid = time.strftime("%Y%m%d-%H%M%S-") + str(os.getpid())
+        log = os.path.join(RUNS, rid + ".log")
+        record(rid, {"id": rid, "repo": r["key"], "path": r["top"], "main": r["main"], "branch": r["branch"],
+                     "commands": e["run"], "status": "running", "started": time.time(), "log": log})
+        # Own session and no inherited pipes: git, and whoever runs git, must not wait for it.
+        with open(log, "ab") as f:
+            subprocess.Popen([sys.executable, os.path.realpath(__file__), "_exec", rid], cwd=r["top"],
+                             stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+        out.append(f"running {len(e['run'])} command(s) in the background, log: {log}")
+    return f"{r['key']}: " + "; ".join(out)
+
+
+def login_env():
+    """The user's interactive login shell environment, so yarn under nvm and friends are on PATH."""
+    # ponytail: an rc file that waits for input stalls this up to the timeout, then the hook's own env is used.
+    try:
+        out = subprocess.run([os.environ.get("SHELL") or "/bin/sh", "-lic", "command env -0"], capture_output=True,
+                             stdin=subprocess.DEVNULL, timeout=15).stdout.decode(errors="replace")
+        env = dict(kv.split("=", 1) for kv in out.split("\0") if "=" in kv)
+        return env if "PATH" in env else dict(os.environ)
+    except (OSError, subprocess.TimeoutExpired):
+        return dict(os.environ)
+
+
+def execute(rid):
+    rec = record(rid)
+    rec["pid"] = os.getpid()
+    record(rid, rec)
+    env = login_env()
+    env.update(WT_PATH=rec["path"], WT_REPO_ROOT=rec["main"] or "", WT_BRANCH=rec["branch"])
+    code = 0
+    for cmd in rec["commands"]:
+        print(f"$ {cmd}", flush=True)
+        code = subprocess.run(["/bin/sh", "-c", cmd], cwd=rec["path"], env=env, stdin=subprocess.DEVNULL).returncode
+        if code:
+            print(f"exit {code}", flush=True)
+            break
+    rec.update(status="failed" if code else "ok", exit=code, finished=time.time())
+    record(rid, rec)
+
+
+def runs(n):
+    if not os.path.isdir(RUNS):
+        return []
+    out = []
+    for name in sorted((f for f in os.listdir(RUNS) if f.endswith(".json")), reverse=True)[:n]:
+        rec = record(name[:-5])
+        if rec["status"] == "running" and rec.get("pid") and not alive(rec["pid"]):
+            rec["status"] = "lost"
+        out.append(rec)
+    return out
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def git_version():
+    v = (git(".", "--version") or "").split()
+    return tuple(int(x) for x in v[2].split(".")[:2]) if len(v) > 2 else (0, 0)
+
+
+def check_entry(e):
+    if not isinstance(e, dict) or set(e) - set(FIELDS):
+        fail(f"an entry is an object with only {', '.join(FIELDS)}")
+    for k, v in e.items():
+        if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
+            fail(f"{k} must be a list of non-empty strings")
+    for p in e.get("copy", []):
+        if os.path.isabs(p) or ".." in p.split("/"):
+            fail(f"copy paths stay inside the repo: {p}")
+
+
+def main(argv):
+    cmd, args = (argv[0], argv[1:]) if argv else ("help", [])
+    if cmd == "post-checkout":
+        # A new worktree checks out from the null commit; git clone does too, but isn't a linked worktree.
+        if not args or set(args[0]) != {"0"}:
+            return
+        try:
+            r = repo(".")
+            if r["linked"]:
+                print(f"herdr-worktree-hook: {setup(r)}", file=sys.stderr)
+        except (Exception, SystemExit) as e:
+            print(e if isinstance(e, SystemExit) else f"herdr-worktree-hook: {e}", file=sys.stderr)
+        return  # A failed setup must not make git report the worktree as failed.
+    if cmd == "_exec":
+        return execute(args[0])
+    if cmd == "run":
+        r = repo(args[0] if args else ".")
+        if not r["linked"]:
+            fail(f"{r['top']} is the main checkout, not a linked worktree")
+        return print(setup(r))
+    if cmd == "key":
+        return print(repo(args[0] if args else ".")["key"])
+    if cmd == "show":
+        r, cfg = repo(args[0] if args else "."), load()
+        return print(json.dumps({**r, "own": cfg.get("repos", {}).get(r["key"]), "entry": entry(cfg, r["key"])}, indent=2, ensure_ascii=False))
+    if cmd == "version":
+        return print(VERSION)
+    if cmd == "ls":
+        cfg = load()
+        return print(json.dumps({"config": CONFIG, "state": STATE, "installed": bool(git(".", "config", "--global", "--get", f"{HOOK}.command")),
+                                 "git": ".".join(map(str, git_version())), "builtin": BUILTIN,
+                                 "default": cfg.get("default", {}), "repos": cfg.get("repos", {})}, indent=2, ensure_ascii=False))
+    if cmd in ("set", "rm"):
+        if len(args) != 1:
+            fail(f"usage: {cmd} KEY")
+        cfg = load()
+        if cmd == "set":
+            try:
+                e = json.load(sys.stdin)
+            except ValueError as err:
+                fail(f"stdin is not valid JSON: {err}")
+            check_entry(e)
+            if args[0] == "default":
+                cfg["default"] = e
+            else:
+                cfg.setdefault("repos", {})[args[0]] = e
+        elif args[0] == "default":
+            cfg.pop("default", None)
+        elif cfg.get("repos", {}).pop(args[0], None) is None:
+            fail(f"no entry for {args[0]}")
+        return save(cfg)
+    if cmd == "history":
+        n = int(args[args.index("-n") + 1]) if "-n" in args else 20
+        hist = runs(n)
+        if "--json" in args:
+            return print(json.dumps(hist, indent=2, ensure_ascii=False))
+        for h in hist:
+            print(f"{h['status']:8} {time.strftime('%m-%d %H:%M', time.localtime(h['started']))}  {h['repo']}  {h['branch'] or os.path.basename(h['path'])}  {h['log']}")
+        return
+    if cmd == "install":
+        if git_version() < (2, 54):
+            fail("needs git 2.54 or newer (hooks set in git config)")
+        git(".", "config", "--global", "--replace-all", f"{HOOK}.event", "post-checkout")
+        git(".", "config", "--global", "--replace-all", f"{HOOK}.command", f"{shlex.quote(os.path.realpath(__file__))} post-checkout")
+        return print(f"installed: {HOOK} runs on post-checkout\nconfig: {CONFIG}")
+    if cmd == "uninstall":
+        git(".", "config", "--global", "--remove-section", HOOK)
+        return print("uninstalled")
+    print(__doc__.strip())
+    if cmd not in ("help", "-h", "--help"):
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
