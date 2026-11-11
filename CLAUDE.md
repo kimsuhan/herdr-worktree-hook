@@ -40,6 +40,5 @@ checkout, run setup commands in the background), plus a Herdr app panel for it. 
 ## Known gaps
 
 - If the CLI isn't found when the panel starts, it keeps the error until the mod reloads.
-- Buttons inside the `raised` repo block are `raised` too and barely stand out.
 - Spaces on other machines aren't supported; Linux is untested.
 - `install` writes this clone's absolute path into `~/.gitconfig`: moving the clone needs `install` again.

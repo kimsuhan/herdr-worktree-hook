@@ -15,6 +15,9 @@ const FIELDS = [
 ];
 const COLOR = { ok: "ansi2", failed: "ansi1", running: "working", lost: "dim" };
 
+const ICON = (name) => `mods/workspace-chrome/${name}.svg`; // shipped with Herdr
+// "github.com/acme/api" is shown as "api" under "github.com/acme".
+const split = (key) => { const i = key.lastIndexOf("/"); return i > 0 ? [key.slice(0, i), key.slice(i + 1)] : ["", key]; };
 const tilde = (p) => (p && p.startsWith(home()) ? "~" + p.slice(home().length) : p ?? "");
 function ago(sec) {
   const s = Date.now() / 1000 - sec;
@@ -27,7 +30,7 @@ function ago(sec) {
 export default class WorktreeHook extends View {
   init(_props, cx) {
     this.list = null; // `ls`
-    this.runs = []; // `history --json`
+    this.runs = []; // `history --json`, every repo's: a failure anywhere is announced
     this.repo = null; // `show` of the shown space's folder
     this.folder = undefined;
     this.seen = {}; // space id: the last terminal folder focused in it
@@ -58,7 +61,7 @@ export default class WorktreeHook extends View {
     if (!this.bin) return;
     try {
       this.list = JSON.parse(await this.cli(["ls"]));
-      this.runs = JSON.parse(await this.cli(["history", "--json", "-n", "30"]));
+      this.runs = JSON.parse(await this.cli(["history", "--json", "-n", "100"]));
       this.error = null;
       this.announce();
       if (this.open) this.open.log = await this.tail(this.open.run);
@@ -164,32 +167,52 @@ export default class WorktreeHook extends View {
 
   render(cx) {
     const t = theme();
-    const folder = this.here().folder;
-    if (this.bin && folder !== this.folder) { this.folder = folder; cx.spawn(async (cx) => this.show(cx)); }
+    if (this.bin && this.here().folder !== this.folder) cx.spawn(async (cx) => this.show(cx));
     return v_flex().id("worktree-hook").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background)
       .border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(this.header(t))
       .when(Boolean(this.list && !this.list.installed), (el) => el.child(this.banner(t)))
-      .when(Boolean(this.error || this.note), (el) => el.child(div().px(14).py(6).text_size(12).text_color(t.ansi1).child(this.error || this.note)))
+      .when(Boolean(this.error || this.note), (el) => el.child(div().mx(8).mt(8).px(10).py(7).rounded(7).bg(t.ansi1 + "1c")
+        .text_size(12).text_color(t.ansi1).child(this.error || this.note)))
       .child(div().id("worktree-hook-body").flex_1().min_h(0).overflow_y_scrollbar()
         .child(this.view === "form" && this.form ? this.renderForm(t) : this.renderMain(t)));
   }
 
+  back(cx) {
+    this.view = "main";
+    this.form = null;
+    cx.notify();
+  }
+
+  // On `background`, so it stands out on the panel and on a `raised` block alike.
   button(id, label, t, onClick, opts = {}) {
-    return h_flex().id(id).h(opts.h ?? 26).px(opts.px ?? 9).flex_none().items_center().justify_center().rounded(7).text_size(12)
-      .bg(opts.solid ? t.solid : t.raised).text_color(opts.solid ? t.solid_foreground : opts.danger ? t.ansi1 : t.foreground)
-      .border_1().border_color(opts.solid ? t.solid : t.border).cursor_pointer().hover((s) => s.opacity(0.85))
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => onClick(cx)).child(label);
+    const color = opts.solid ? t.solid_foreground : opts.danger ? t.ansi1 : t.foreground;
+    return h_flex().id(id).h(26).px(10).gap(6).flex_none().items_center().justify_center().rounded(7).text_size(12)
+      .bg(opts.solid ? t.solid : t.background).text_color(color)
+      .border_1().border_color(opts.solid ? t.solid : opts.danger ? t.ansi1 + "55" : t.border).cursor_pointer()
+      .hover((s) => (opts.solid ? s.opacity(0.85) : s.bg(t.hover)))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => onClick(cx))
+      .when(Boolean(opts.icon), (el) => el.child(svg(ICON(opts.icon)).size(12).flex_none().text_color(color)))
+      .child(label);
+  }
+
+  pill(label, t, color) {
+    return div().px(6).py(1).flex_none().rounded(5).text_size(10.5).border_1()
+      .bg(color ? color + "22" : t.background).border_color(color ? color + "44" : t.border).text_color(color ?? t.muted).child(label);
   }
 
   header(t) {
-    const back = this.view !== "main";
-    return h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-      .when(back, (el) => el.child(this.button("back", "‹", t, (cx) => { this.view = "main"; this.form = null; cx.notify(); }, { px: 7 })))
+    const ok = this.list?.installed;
+    return h_flex().h(42).flex_none().pl(this.view === "main" ? 14 : 8).pr(14).gap(8).items_center().border_b(1).border_color(t.border)
+      .child(this.view === "main" ? svg("mods/worktree-hook/worktree-hook.svg").size(15).flex_none().text_color(t.muted)
+        : h_flex().id("back").size(26).flex_none().items_center().justify_center().rounded(7).cursor_pointer().hover((s) => s.bg(t.hover))
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => this.back(cx))
+          .child(svg(ICON("chevron-left")).size(14).text_color(t.muted)))
       .child(div().font_semibold().child("Worktree Hook"))
       .child(div().flex_1())
-      .when(Boolean(this.list), (el) => el.child(div().text_size(11).text_color(this.list.installed ? t.dim : t.blocked)
-        .child(this.list.installed ? `git ${this.list.git}` : "not installed")));
+      .when(Boolean(this.list), (el) => el.child(h_flex().gap(6).items_center().text_size(11).text_color(ok ? t.dim : t.blocked)
+        .child(div().size(6).rounded(3).flex_none().bg(ok ? t.ansi2 : t.blocked))
+        .child(ok ? `git ${this.list.git}` : "not installed")));
   }
 
   banner(t) {
@@ -199,89 +222,129 @@ export default class WorktreeHook extends View {
   }
 
   section(label, t) {
-    return div().px(14).pt(12).pb(4).text_size(11).font_semibold().text_color(t.dim).child(label);
+    return div().px(14).pt(14).pb(6).text_size(10.5).font_semibold().text_color(t.dim).child(label);
+  }
+
+  hint(text, t) {
+    return div().px(14).py(4).text_size(12).text_color(t.dim).child(text);
   }
 
   renderMain(t) {
     if (!this.list) return div().p(14).text_color(t.dim).child(this.error ? "" : "Loading…");
-    const col = v_flex().pb(10);
+    const col = v_flex().pb(12);
     col.child(this.section("THIS REPO", t)).child(this.renderRepo(t));
     col.child(this.section("RECENT RUNS", t));
-    if (!this.runs.length) col.child(div().px(14).py(4).text_size(12).text_color(t.dim).child("No runs yet."));
-    for (const r of this.runs) col.child(this.runRow(r, t));
+    // The shown repo's runs; outside a checkout there's no repo to pick, so every repo's.
+    const runs = (this.repo ? this.runs.filter((r) => r.repo === this.repo.key) : this.runs).slice(0, 30);
+    if (!runs.length) col.child(this.hint("No runs yet.", t));
+    for (const r of runs) col.child(this.runRow(r, t));
     const keys = Object.keys(this.list.repos ?? {}).filter((k) => k !== this.repo?.key);
     col.child(this.section("SETTINGS", t))
-      .child(this.keyRow("default", "Every repo without its own", t))
-      .children(keys.map((k) => this.keyRow(k, (this.list.repos[k].run ?? []).join(" && ") || "copy only", t)));
+      .child(this.keyRow("default", "Default", "Every repo without its own", t))
+      .children(keys.map((k) => {
+        const [where, name] = split(k);
+        return this.keyRow(k, name, [where, (this.list.repos[k].run ?? []).join(" && ") || "copy only"].filter(Boolean).join(" · "), t);
+      }));
     return col;
+  }
+
+  // Paths and patterns: short, many, order doesn't matter.
+  chips(values, t) {
+    if (!values.length) return div().text_size(12).text_color(t.dim).child("None");
+    return h_flex().flex_wrap().gap(4).children(values.map((v) => div().min_w(0).px(6).py(2).rounded(5).truncate()
+      .bg(t.background).border_1().border_color(t.border).font_family(settings().font_family).text_size(11).child(v)));
+  }
+
+  // Commands: run top to bottom, so numbered.
+  steps(values, t) {
+    if (!values.length) return div().text_size(12).text_color(t.dim).child("None");
+    return v_flex().px(8).py(6).gap(4).rounded(6).bg(t.background).border_1().border_color(t.border)
+      .font_family(settings().font_family).text_size(11)
+      .children(values.map((v, i) => h_flex().gap(8)
+        .child(div().flex_none().text_color(t.dim).child(String(i + 1)))
+        .child(div().flex_1().min_w(0).truncate().child(v))));
   }
 
   renderRepo(t) {
     const r = this.repo;
-    if (this.remote) return div().px(14).py(4).text_size(12).text_color(t.dim).child("Spaces on other machines aren't supported yet.");
-    if (!r) return div().px(14).py(4).text_size(12).text_color(t.dim).child("The shown space isn't in a git checkout.");
-    const e = r.entry, line = (k, v) => h_flex().gap(8).text_size(12).items_start()
-      .child(div().w(64).flex_none().text_color(t.dim).child(k))
-      .child(v_flex().flex_1().min_w(0).gap(2).children(v.length ? v.map((x) => div().truncate().font_family(settings().font_family).text_size(11.5).child(x)) : [div().text_color(t.dim).child("—")]));
-    return v_flex().mx(8).px(8).py(6).gap(6).rounded(7).bg(t.raised)
-      .child(v_flex().gap(1)
-        .child(div().font_semibold().truncate().child(r.key))
-        .child(div().text_size(11).text_color(t.muted).truncate()
-          .child(`${r.linked ? "worktree" : "main checkout"}${r.branch ? " · " + r.branch : ""} · ${r.own ? "own settings" : "default settings"}`)))
-      .child(line("copy", e.copy)).child(line("run", e.run)).child(line("skip run", e.skip_run))
-      .child(h_flex().gap(6).flex_wrap().pt(2)
-        .child(this.button("edit", r.own ? "Edit" : "Customize", t, (cx) => this.edit(r.key, cx)))
-        .when(r.linked, (el) => el.child(this.button("rerun", "Set up again", t, (cx) => this.act(cx, ["run", r.top]))))
-        .when(Boolean(r.own), (el) => el.child(this.button("rm", this.removing === r.key ? "Confirm reset" : "Reset to default", t, (cx) => {
-          if (this.removing !== r.key) { this.removing = r.key; cx.notify(); return; }
-          this.removing = null;
-          this.act(cx, ["rm", r.key]);
-        }, { danger: true }))));
+    if (this.remote) return this.hint("Spaces on other machines aren't supported yet.", t);
+    if (!r) return this.hint("The shown space isn't in a git checkout.", t);
+    const [where, name] = split(r.key), e = r.entry;
+    const field = (label, body) => v_flex().gap(5).child(div().text_size(10.5).font_semibold().text_color(t.dim).child(label)).child(body);
+    return v_flex().mx(8).rounded(9).bg(t.raised).border_1().border_color(t.border).overflow_hidden()
+      .child(v_flex().px(12).pt(10).pb(11).gap(7)
+        .child(v_flex().gap(1)
+          .when(Boolean(where), (el) => el.child(div().text_size(11).text_color(t.dim).truncate().child(where)))
+          .child(div().text_size(14).font_semibold().truncate().child(name)))
+        .child(h_flex().gap(6).items_center()
+          .when(Boolean(r.branch), (el) => el.child(h_flex().min_w(0).gap(4).items_center().text_size(11.5).text_color(t.muted)
+            .child(svg(ICON("git-branch")).size(12).flex_none().text_color(t.dim))
+            .child(div().min_w(0).truncate().child(r.branch))))
+          .child(this.pill(r.linked ? "worktree" : "main checkout", t))
+          .child(this.pill(r.own ? "own settings" : "default settings", t, r.own ? t.accent : null))))
+      .child(v_flex().px(12).py(11).gap(11).border_t(1).border_color(t.border)
+        .child(field("COPY", this.chips(e.copy, t)))
+        .child(field("RUN", this.steps(e.run, t)))
+        .when(e.skip_run.length > 0, (el) => el.child(field("SKIP RUN", this.chips(e.skip_run, t)))))
+      .child(h_flex().px(12).py(9).gap(6).border_t(1).border_color(t.border)
+        .child(this.button("edit", r.own ? "Edit" : "Customize", t, (cx) => this.edit(r.key, cx), { icon: "square-pen" }))
+        .when(r.linked, (el) => el.child(this.button("rerun", "Set up again", t, (cx) => this.act(cx, ["run", r.top])))));
   }
 
   runRow(r, t) {
     const color = t[COLOR[r.status] ?? "dim"], open = this.open?.run.id === r.id;
     return v_flex()
-      .child(h_flex().id(`run-${r.id}`).mx(8).px(8).py(5).gap(7).rounded(7).items_center().cursor_pointer().hover((s) => s.bg(t.hover))
+      .child(h_flex().id(`run-${r.id}`).mx(8).px(8).py(6).gap(8).rounded(7).items_center().cursor_pointer()
+        .when(open, (el) => el.bg(t.hover)).hover((s) => s.bg(t.hover))
         .on_click((_e, cx) => {
           if (open) { this.open = null; return cx.notify(); }
           cx.spawn(async (cx) => { this.open = { run: r, log: await this.tail(r) }; cx.notify(); });
         })
-        .child(r.status === "running" ? svg("mods/workspace-chrome/spinner.svg").size(10).flex_none().text_color(color).spin(900)
-          : div().size(7).rounded(4).flex_none().bg(color))
-        .child(v_flex().flex_1().min_w(0)
+        .child(h_flex().size(14).flex_none().items_center().justify_center()
+          .child(r.status === "running" ? svg(ICON("spinner")).size(11).text_color(color).spin(900) : div().size(7).rounded(4).bg(color)))
+        .child(v_flex().flex_1().min_w(0).gap(1)
           .child(div().truncate().child(r.branch || r.path.split("/").pop()))
-          .child(div().text_size(11).text_color(t.dim).truncate().child(r.repo)))
+          .child(div().text_size(11).text_color(t.dim).truncate().child(`${split(r.repo)[1]} · ${ago(r.started)}`)))
         .child(div().flex_none().text_size(11).text_color(color).child(r.status === "failed" ? `exit ${r.exit}` : r.status))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child(ago(r.started))))
-      .when(open, (el) => el.child(v_flex().mx(8).mb(4).p(8).gap(4).rounded(7).bg(t.raised)
-        .child(div().text_size(11).text_color(t.dim).truncate().child(tilde(r.path)))
-        .child(div().font_family(settings().font_family).text_size(11).text_color(t.muted).child(this.open.log || "(empty log)"))));
+        .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(12).flex_none().text_color(t.dim)))
+      .when(open, (el) => el.child(v_flex().mx(8).mt(3).mb(6).rounded(7).bg(t.raised).border_1().border_color(t.border).overflow_hidden()
+        .child(h_flex().px(10).py(6).gap(6).items_center().border_b(1).border_color(t.border).text_size(11).text_color(t.dim)
+          .child(svg(ICON("folder")).size(12).flex_none().text_color(t.dim))
+          .child(div().flex_1().min_w(0).truncate().child(tilde(r.path))))
+        .child(div().px(10).py(8).font_family(settings().font_family).text_size(11).text_color(t.muted).child(this.open.log || "(empty log)"))));
   }
 
-  keyRow(key, sub, t) {
-    return v_flex().id(`key-${key}`).mx(8).px(8).py(5).gap(1).rounded(7).cursor_pointer().hover((s) => s.bg(t.hover))
+  keyRow(key, name, sub, t) {
+    return h_flex().id(`key-${key}`).mx(8).px(8).py(6).gap(8).rounded(7).items_center().cursor_pointer().hover((s) => s.bg(t.hover))
       .on_click((_e, cx) => this.edit(key, cx))
-      .child(div().truncate().child(key))
-      .child(div().text_size(11).text_color(t.dim).truncate().child(sub));
+      .child(v_flex().flex_1().min_w(0).gap(1)
+        .child(div().truncate().child(name))
+        .child(div().text_size(11).text_color(t.dim).truncate().child(sub)))
+      .child(svg(ICON("chevron-right")).size(12).flex_none().text_color(t.dim));
   }
 
   renderForm(t) {
-    const f = this.form;
+    const f = this.form, [where, name] = f.key === "default" ? ["", "Default settings"] : split(f.key);
     return v_flex().p(14).gap(4)
-      .child(div().text_size(15).font_semibold().truncate().child(f.key === "default" ? "Default settings" : f.key))
+      .when(Boolean(where), (el) => el.child(div().text_size(11).text_color(t.dim).truncate().child(where)))
+      .child(div().text_size(15).font_semibold().truncate().child(name))
       .child(div().text_size(11).text_color(t.dim).child(f.key === "default"
         ? "Repos without settings of their own get these. An empty field keeps the built-in value shown in grey."
         : "An empty field follows the default settings, shown in grey."))
-      .children(FIELDS.map(([k, label, help]) => v_flex().gap(3).pt(8)
-        .child(div().text_size(11).font_semibold().text_color(t.dim).child(label))
-        .child(div().id(`f-${k}`).p(8).rounded(7).border_1().border_color(t.input)
+      .children(FIELDS.map(([k, label, help]) => v_flex().gap(4).pt(10)
+        .child(div().text_size(10.5).font_semibold().text_color(t.dim).child(label))
+        .child(div().id(`f-${k}`).p(8).rounded(7).bg(t.raised).border_1().border_color(t.input)
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
           .child(Textarea.new(f[k]).w_full().text_size(12).font_family(settings().font_family)))
         .child(div().text_size(11).text_color(t.dim).child(help))))
       .when(Boolean(f.note), (el) => el.child(div().pt(6).text_size(12).text_color(t.ansi1).child(f.note)))
-      .child(h_flex().pt(10).gap(8).justify_end()
-        .child(this.button("f-cancel", "Cancel", t, (cx) => { this.view = "main"; this.form = null; cx.notify(); }))
+      .child(h_flex().pt(12).gap(8).items_center()
+        .when(Boolean(f.own), (el) => el.child(this.button("f-reset", f.removing ? "Confirm reset" : "Reset to default", t, (cx) => {
+          if (!f.removing) { f.removing = true; return cx.notify(); }
+          this.act(cx, ["rm", f.key], () => { this.view = "main"; this.form = null; });
+        }, { danger: true })))
+        .child(div().flex_1())
+        .child(this.button("f-cancel", "Cancel", t, (cx) => this.back(cx)))
         .child(this.button("f-save", "Save", t, (cx) => this.save(cx), { solid: true })));
   }
 }
