@@ -1,11 +1,12 @@
 #!/bin/sh
 # Self-check: real git worktrees in a temp folder, isolated from your git config and herdr config.
 set -eu
-# The system python first (3.9 on macOS), the oldest one this has to run on.
-[ ! -x /usr/bin/python3 ] || PATH="/usr/bin:$PATH"
 BIN=$(cd "$(dirname "$0")" && pwd)/bin/herdr-worktree-hook
 T=$(cd "$(mktemp -d)" && pwd -P)
 trap 'rm -rf "$T"' EXIT
+# The system python first (3.9 on macOS), the oldest one this has to run on. Only python: the rest of
+# /usr/bin would bring the system git too, which can be older than 2.54.
+if [ -x /usr/bin/python3 ]; then mkdir "$T/bin"; ln -s /usr/bin/python3 "$T/bin/python3"; PATH="$T/bin:$PATH"; fi
 export GIT_CONFIG_GLOBAL="$T/gitconfig" GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME="$T/config" XDG_STATE_HOME="$T/state" SHELL=/bin/sh
 : > "$GIT_CONFIG_GLOBAL"
 git config --global user.name t; git config --global user.email t@t
