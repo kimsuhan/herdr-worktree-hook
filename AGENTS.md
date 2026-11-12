@@ -36,6 +36,13 @@ checkout, run setup commands in the background), plus a Herdr app panel for it. 
 - Docs: change both READMEs; change `app/RECIPE.md` when the panel's look or behavior changes.
 - `preview.png` is public: it must show only public repos. The panel lists every configured repo, so
   crop or pick a moment where no private repo name or setting is on screen.
+- Commit messages are in English.
+
+## Versions
+
+- Bump `VERSION` in `bin/herdr-worktree-hook` only when the config format, install paths or the CLI
+  output the mod reads change. Then tag `vX.Y.Z` on `main` and run
+  `gh release create vX.Y.Z --generate-notes`. Other changes ship from `main` untagged.
 
 ## Sharing the mod
 
