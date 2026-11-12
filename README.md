@@ -2,6 +2,8 @@
 
 [한국어](README.ko.md)
 
+![Worktree Hook](app/preview.png)
+
 A new git worktree is a clean checkout: no `.env`, no `node_modules`, nothing git ignores.
 herdr-worktree-hook sets each new worktree up for you, however it was made (`git worktree add`, your
 editor, an agent, [Herdr](https://herdr.dev)):
@@ -104,6 +106,8 @@ honored). If a command can't be found, check that your login shell puts it on `P
 For the [Herdr app](https://herdr.dev), a side panel shows the settings in effect for the repo of the
 space you're in, edits them, sets a worktree up again, and lists recent runs with their logs. A failed
 run posts a notification.
+
+<img src="docs/panel.png" alt="The panel: this repo's settings, recent runs and the default settings" width="390">
 
 ```sh
 cp -R herdr-worktree-hook/app/mods/worktree-hook ~/.config/herdr-app/mods/

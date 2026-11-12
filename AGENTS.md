@@ -8,7 +8,8 @@ checkout, run setup commands in the background), plus a Herdr app panel for it. 
 - `bin/herdr-worktree-hook`: the whole CLI and the hook, one python3 file, no dependencies.
 - `app/`: the Herdr mod as herdr.dev/mods shares it: `mods/worktree-hook/`, `RECIPE.md`, `preview.png`.
 - `test.sh`: real worktrees in a temp folder, isolated with `GIT_CONFIG_GLOBAL` and `XDG_*`.
-- `README.md` and `README.ko.md` say the same thing in English and Korean.
+- `README.md` and `README.ko.md` say the same thing in English and Korean. `docs/panel.png` is the
+  real panel screenshot they show.
 
 ## Rules
 
@@ -34,8 +35,9 @@ checkout, run setup commands in the background), plus a Herdr app panel for it. 
   then `herdr-app status` for errors. The mod API is in `~/.config/herdr-app/AGENTS.md` and its `.d.ts`
   files. `herdr-app shot` shows the window.
 - Docs: change both READMEs; change `app/RECIPE.md` when the panel's look or behavior changes.
-- `preview.png` is public: it must show only public repos. The panel lists every configured repo, so
-  crop or pick a moment where no private repo name or setting is on screen.
+- `app/preview.png` is the gallery thumbnail: the name and two lines at the left, `docs/panel.png` at
+  the right, generated from that screenshot with Codex image_gen. Both are public: show only public
+  repos, with no private repo name or setting on screen. Retake both when the panel changes.
 - Commit messages are in English.
 
 ## Versions

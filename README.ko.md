@@ -2,6 +2,8 @@
 
 [English](README.md)
 
+![Worktree Hook](app/preview.png)
+
 새 git worktree는 깨끗한 체크아웃이라 `.env`도, `node_modules`도, git이 무시하는 파일도 없습니다.
 herdr-worktree-hook은 worktree를 어떻게 만들었든(`git worktree add`, 에디터, 에이전트,
 [Herdr](https://herdr.dev)) 새 worktree를 대신 준비해 줍니다.
@@ -103,6 +105,8 @@ herdr-worktree-hook rm github.com/acme/api
 
 [Herdr 앱](https://herdr.dev)을 쓰면 사이드 패널에서 지금 스페이스의 저장소에 적용되는 설정을 보고,
 고치고, worktree를 다시 준비하고, 최근 실행과 로그를 볼 수 있습니다. 실행이 실패하면 알림이 뜹니다.
+
+<img src="docs/panel.png" alt="이 저장소의 설정, 최근 실행, 기본 설정이 보이는 패널" width="390">
 
 ```sh
 cp -R herdr-worktree-hook/app/mods/worktree-hook ~/.config/herdr-app/mods/
