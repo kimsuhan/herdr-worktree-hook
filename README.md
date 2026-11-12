@@ -114,7 +114,9 @@ cp -R herdr-worktree-hook/app/mods/worktree-hook ~/.config/herdr-app/mods/
 ```
 
 Herdr docks it on the right the first time it sees it; after that, your layout decides where it is.
-It finds the CLI on `PATH` or in `~/.local/bin`. Spaces on other machines aren't supported yet.
+It uses the CLI on `PATH`. Without one, it downloads the CLI of its pinned release once (checked by
+sha256) into `~/.local/share/herdr-worktree-hook/<version>/`, and its `Install` button adds the hook,
+so copying the mod is enough. Spaces on other machines aren't supported yet.
 
 ## Development
 

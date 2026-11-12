@@ -113,7 +113,9 @@ cp -R herdr-worktree-hook/app/mods/worktree-hook ~/.config/herdr-app/mods/
 ```
 
 Herdr가 처음 발견할 때 오른쪽에 붙이고, 그 뒤로는 레이아웃에서 위치를 정합니다.
-CLI는 `PATH`나 `~/.local/bin`에서 찾습니다. 다른 머신의 스페이스는 아직 지원하지 않습니다.
+CLI는 `PATH`에 있는 것을 씁니다. 없으면 고정된 릴리스의 CLI를 한 번 받아 sha256을 확인한 뒤
+`~/.local/share/herdr-worktree-hook/<version>/`에 두고, 패널의 `Install` 버튼이 hook을 추가하므로
+모드만 복사해도 됩니다. 다른 머신의 스페이스는 아직 지원하지 않습니다.
 
 ## 개발
 

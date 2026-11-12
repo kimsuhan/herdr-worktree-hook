@@ -8,6 +8,17 @@ import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
 import { exec, home, theme, settings, spaces, panes, focused, notify, readTextFile, watchFolder } from "herdr";
 
 const BIN = "herdr-worktree-hook";
+// The CLI this mod fetches when none is on PATH: bin/herdr-worktree-hook at tag v<CLI.version>.
+// test.sh checks both values against bin/.
+const CLI = { version: "0.1.0", sha256: "fa31bb9ee5f435fa200e0c6bfd98441072844caee61cac4e0afafbaa4d2bc681" };
+// Downloads it once into ~/.local/share/herdr-worktree-hook/<version>/, refusing a checksum mismatch.
+const FETCH = `v=$1 sum=$2 dest="$HOME/.local/share/herdr-worktree-hook/$1"
+[ -x "$dest/herdr-worktree-hook" ] && exit 0
+tmp=$(mktemp -d) && trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "https://raw.githubusercontent.com/kimsuhan/herdr-worktree-hook/v$v/bin/herdr-worktree-hook" -o "$tmp/cli" || { echo "couldn't download herdr-worktree-hook $v" >&2; exit 1; }
+if command -v sha256sum >/dev/null 2>&1; then have=$(sha256sum "$tmp/cli" | cut -d' ' -f1); else have=$(shasum -a 256 "$tmp/cli" | cut -d' ' -f1); fi
+[ "$have" = "$sum" ] || { echo "herdr-worktree-hook $v: checksum mismatch, not installed" >&2; exit 1; }
+chmod +x "$tmp/cli" && mkdir -p "$dest" && mv "$tmp/cli" "$dest/herdr-worktree-hook"`;
 const FIELDS = [
   ["copy", "COPY", "Paths in the main checkout, one per line. Globs work, a trailing / copies a folder. Only git-ignored files, never overwriting."],
   ["run", "RUN", "Commands, one per line, run in order in the new worktree. The first failure stops the rest."],
@@ -39,16 +50,18 @@ export default class WorktreeHook extends View {
     this.open = null; // the run whose log is shown
     this.known = null; // run ids already seen, to toast only new failures
     cx.spawn(async (cx) => {
-      this.bin = await this.locate();
+      try { this.bin = await this.locate(); } catch (e) { this.error = String(e.message ?? e); }
       await this.refresh(cx);
       this.watch(cx);
     });
   }
 
-  // The CLI on PATH, else where the README links it.
+  // The CLI on PATH (a clone you linked), else the pinned copy, fetched the first time.
   async locate() {
     try { if ((await exec(BIN, ["version"])).code === 0) return BIN; } catch {}
-    return `${home()}/.local/bin/${BIN}`;
+    const r = await exec("sh", ["-c", FETCH, "sh", CLI.version, CLI.sha256]);
+    if (r.code !== 0) throw new Error(r.stderr.trim() || "couldn't download herdr-worktree-hook");
+    return `${home()}/.local/share/herdr-worktree-hook/${CLI.version}/${BIN}`;
   }
 
   async cli(args) {
@@ -58,7 +71,7 @@ export default class WorktreeHook extends View {
   }
 
   async refresh(cx) {
-    if (!this.bin) return;
+    if (!this.bin) return cx.notify();
     try {
       this.list = JSON.parse(await this.cli(["ls"]));
       this.runs = JSON.parse(await this.cli(["history", "--json", "-n", "100"]));

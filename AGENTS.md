@@ -23,9 +23,12 @@ checkout, run setup commands in the background), plus a Herdr app panel for it. 
   (`.env`, `.env.*`); personal lists belong in a user's `default`, not in the code.
 - Paths follow Herdr's plugin convention with the id `kimsuhan.worktree-hook`:
   `~/.config/herdr/plugins/config/<id>/config.json`, `~/.local/state/herdr/plugins/<id>/runs/`.
-- The mod never writes files: it calls the CLI (`ls`, `show`, `history --json`, `set`, `rm`, `run`,
+- The mod never writes settings: it calls the CLI (`ls`, `show`, `history --json`, `set`, `rm`, `run`,
   `install`). `exec` has no stdin, so `set` goes through `sh -c 'printf %s "$2" | "$1" set "$3"'`.
   A CLI output change must keep the mod and `app/RECIPE.md` in step.
+- Its one file write: with no CLI on `PATH`, it downloads `bin/herdr-worktree-hook` at tag
+  `v<CLI.version>` into `~/.local/share/herdr-worktree-hook/<version>/`, kept only if it matches
+  `CLI.sha256` in `main.js`. It never runs `install` by itself; the panel's button does.
 
 ## After a change
 
@@ -42,9 +45,10 @@ checkout, run setup commands in the background), plus a Herdr app panel for it. 
 
 ## Versions
 
-- Bump `VERSION` in `bin/herdr-worktree-hook` only when the config format, install paths or the CLI
-  output the mod reads change. Then tag `vX.Y.Z` on `main` and run
-  `gh release create vX.Y.Z --generate-notes`. Other changes ship from `main` untagged.
+- Any change to `bin/herdr-worktree-hook` is a release, since the mod downloads it by tag and checksum:
+  bump `VERSION`, set `CLI` in `main.js` to the new version and the file's sha256 (`./test.sh` fails
+  until they match), push, tag `vX.Y.Z` on `main` and run `gh release create vX.Y.Z --generate-notes`.
+  Changes outside `bin/` ship from `main` untagged.
 
 ## Sharing the mod
 
@@ -57,11 +61,12 @@ checkout, run setup commands in the background), plus a Herdr app panel for it. 
   Herdr's `~/.config/herdr-app/AGENTS.md` gives ("Layouts and mods other people made"): name, paragraph and preview, What you see,
   How it behaves, Built from, Watch out, Done when. Exact values, nothing the build doesn't do.
 - Whoever adds the mod is told what it reaches: keep "Before you add it" true (programs it runs, files
-  it reads outside its folder, no network), and "Built from" in step with `main.js`'s imports and icons.
+  it reads or writes outside its folder, the one download), and "Built from" in step with `main.js`'s imports and icons.
 
 ## Known gaps
 
 - If the CLI isn't found when the panel starts, it keeps the error until the mod reloads.
 - Spaces on other machines aren't supported. CI runs `test.sh` on macOS and Ubuntu, so the CLI is
   tested on Linux; the panel isn't.
-- `install` writes this clone's absolute path into `~/.gitconfig`: moving the clone needs `install` again.
+- `install` writes the CLI's absolute path into `~/.gitconfig`: moving the clone needs `install` again.
+  A newer downloaded copy doesn't move the hook either: it keeps the old version until `install` runs again.

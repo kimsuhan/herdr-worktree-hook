@@ -10,19 +10,18 @@ recent runs with their logs. A failed run posts a notification.
 
 ## Before you add it
 
-The panel is the face of the `herdr-worktree-hook` CLI (python3, git 2.54 or newer). Install it first,
-or the panel shows only an error:
+The panel is the face of the `herdr-worktree-hook` CLI (python3, git 2.54 or newer). Nothing else to
+install: copy `mods/worktree-hook/` and the panel brings the rest. When `herdr-worktree-hook` isn't on
+`PATH`, it downloads the CLI once, pinned to a tag and checked by sha256, into
+`~/.local/share/herdr-worktree-hook/<version>/`. Its `Install` button then adds the global
+`post-checkout` hook to `~/.gitconfig`, pointing at that copy. Nothing touches git config before that
+click.
 
-```sh
-git clone https://github.com/kimsuhan/herdr-worktree-hook
-mkdir -p ~/.local/bin && ln -s "$PWD/herdr-worktree-hook/bin/herdr-worktree-hook" ~/.local/bin/
-herdr-worktree-hook install     # the global post-checkout hook
-```
-
-The mod **runs programs**: `herdr-worktree-hook` for every read and write, and `sh` to pipe JSON into
-it. It **reads files outside its folder**: the run logs under
-`~/.local/state/herdr/plugins/kimsuhan.worktree-hook/runs/`. It reaches no network and writes no file
-itself.
+The mod **reaches the network** once: `raw.githubusercontent.com` for that one file, only when the CLI
+isn't found. It **runs programs**: `herdr-worktree-hook` for every read and write, `sh` to pipe JSON
+into it, and `sh`, `curl`, `sha256sum` or `shasum` for the download. It **writes files outside its
+folder** only for the download, the CLI file above. It **reads files outside its folder**: the run
+logs under `~/.local/state/herdr/plugins/kimsuhan.worktree-hook/runs/`.
 
 ## What you see
 
@@ -107,6 +106,7 @@ Top to bottom:
 - Art: besides its own icon, Herdr's from the shipped `mods/workspace-chrome/`: `git-branch`,
   `square-pen`, `folder`, `chevron-left`, `chevron-right`, `chevron-down`, and `spinner` with
   `.spin(900)` while a run is going.
+- Programs: `sh`, `curl`, `sha256sum` or `shasum` to fetch the CLI when it isn't on `PATH`.
 - The CLI, all JSON on stdout:
   - `version`: is it on PATH;
   - `ls`: `{config, state, installed, git, builtin, default, repos}`;
@@ -119,8 +119,14 @@ Top to bottom:
 ## Watch out
 
 - `exec` has no stdin: save with `exec("sh", ["-c", 'printf %s "$2" | "$1" set "$3"', "sh", bin, json, key])`.
-- Find the CLI once at start: `herdr-worktree-hook version` on PATH, else `~/.local/bin/herdr-worktree-hook`.
-  If neither works then, the panel keeps the error until it reloads.
+- Find the CLI once at start: `herdr-worktree-hook version` on PATH (a clone someone linked), else the
+  pinned copy. `main.js` holds `CLI = { version, sha256 }`; a shell script given to
+  `exec("sh", ["-c", script, "sh", version, sha256])` returns at once if
+  `~/.local/share/herdr-worktree-hook/<version>/herdr-worktree-hook` exists, else downloads
+  `https://raw.githubusercontent.com/kimsuhan/herdr-worktree-hook/v<version>/bin/herdr-worktree-hook`
+  to a temp folder, compares its sha256 (`sha256sum`, else `shasum -a 256`) and only on a match makes it
+  executable and moves it there. A mismatch or a failed download is the error line, kept until the mod
+  reloads.
 - Watch the folder of `ls`'s `config` and its `state` folder with `watchFolder` and reload on each
   change, then `cx.sleep(1000)`: a run writing its log is a stream of changes. A folder that doesn't
   exist yet rejects the watch, so poll every 5 seconds instead.
@@ -137,6 +143,9 @@ Top to bottom:
 ## Done when
 
 - `herdr-app check` passes.
+- With no `herdr-worktree-hook` on `PATH`, opening the panel leaves an executable
+  `~/.local/share/herdr-worktree-hook/<version>/herdr-worktree-hook`; with a wrong sha256 in `CLI` it
+  leaves nothing and shows "checksum mismatch".
 - Without the hook in git config, the banner shows; `Install` makes it go and the header says
   "git 2.54" (or newer).
 - In a space inside a git repo, `THIS REPO` shows its `origin` key and `.env`, `.env.*` under `copy`;

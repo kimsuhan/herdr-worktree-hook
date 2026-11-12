@@ -107,4 +107,8 @@ printf '%s' '{"cmd": []}' | "$BIN" set a 2>/dev/null && fail "accepted unknown f
 # install and uninstall write only the (isolated) global git config.
 "$BIN" install >/dev/null; "$BIN" ls | grep -q '"installed": true' || fail "install"
 "$BIN" uninstall >/dev/null; "$BIN" ls | grep -q '"installed": false' || fail "uninstall"
+
+# The mod fetches bin/ at tag v<version> by checksum: a changed CLI needs a new VERSION, pin and tag.
+pin=$(python3 -c 'import hashlib,sys;print("version: \"%s\", sha256: \"%s\"" % (sys.argv[2], hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()))' "$BIN" "$("$BIN" version)")
+grep -qF "$pin" "$(dirname "$BIN")/../app/mods/worktree-hook/main.js" || fail "main.js CLI pin is not { $pin }"
 echo ok
