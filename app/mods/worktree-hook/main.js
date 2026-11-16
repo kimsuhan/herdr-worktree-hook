@@ -10,7 +10,7 @@ import { checking, exec, home, theme, settings, spaces, panes, focused, notify, 
 const BIN = "herdr-worktree-hook";
 // The CLI this mod fetches when none is on PATH: bin/herdr-worktree-hook at tag v<CLI.version>.
 // test.sh checks both values against bin/.
-const CLI = { version: "0.1.1", sha256: "dbdc594deb98617ffd7b7ebb1323a937207b6fd063e1e0b6e609f8202c444e5f" };
+const CLI = { version: "0.1.2", sha256: "58ef1641375e7c256de9ecbc311011a8d559b4c53b2406622a23aa2e6b0e4d09" };
 // Downloads it once into ~/.local/share/herdr-worktree-hook/<version>/, refusing a checksum mismatch.
 const FETCH = `v=$1 sum=$2 dest="$HOME/.local/share/herdr-worktree-hook/$1"
 [ -x "$dest/herdr-worktree-hook" ] && exit 0
@@ -20,7 +20,7 @@ if command -v sha256sum >/dev/null 2>&1; then have=$(sha256sum "$tmp/cli" | cut 
 [ "$have" = "$sum" ] || { echo "herdr-worktree-hook $v: checksum mismatch, not installed" >&2; exit 1; }
 chmod +x "$tmp/cli" && mkdir -p "$dest" && mv "$tmp/cli" "$dest/herdr-worktree-hook"`;
 const FIELDS = [
-  ["copy", "COPY", "Paths in the main checkout, one per line. Globs work; a folder copies with its files. Only git-ignored files, never overwriting."],
+  ["copy", "COPY", "Paths in the main checkout, one per line. Globs work; a folder copies with its files. Never overwrites what the worktree has."],
   ["run", "RUN", "Commands, one per line, run in order in the new worktree. The first failure stops the rest."],
   ["skip_run", "SKIP RUN", "Branch or folder patterns that skip RUN, such as review-*."],
 ];

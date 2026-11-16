@@ -1,6 +1,6 @@
 # herdr-worktree-hook
 
-A global git `post-checkout` hook that sets up new worktrees (copy ignored files from the main
+A global git `post-checkout` hook that sets up new worktrees (copy local files from the main
 checkout, run setup commands in the background), plus a Herdr app panel for it. Public repo, MIT.
 
 ## Layout

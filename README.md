@@ -68,7 +68,7 @@ Without a config file, every repo copies `.env` and `.env.*` and runs nothing.
 
 | Field | What it does |
 | --- | --- |
-| `copy` | Paths in the main checkout. Globs work, and a folder copies with everything in it. Only files git ignores are copied, and nothing already in the worktree is overwritten. |
+| `copy` | Paths in the main checkout. Globs work, and a folder copies with everything in it. Nothing already in the worktree, such as a file the branch tracks, is overwritten. |
 | `run` | Commands run in order in the new worktree, with your login shell's `PATH` (so nvm, asdf and the like work). The first failure stops the rest. Each gets `WT_PATH`, `WT_REPO_ROOT` (the main checkout) and `WT_BRANCH`. |
 | `skip_run` | Patterns for the branch or the worktree's folder name that skip `run`, such as `review-*`. |
 

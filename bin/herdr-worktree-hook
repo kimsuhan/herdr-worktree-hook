@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 ID = "kimsuhan.worktree-hook"
 HOOK = "hook.herdr-worktree-hook"
 CONFIG = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "herdr/plugins/config", ID, "config.json")
@@ -127,9 +127,6 @@ def copy(r, patterns):
             folder = os.path.isdir(src) and not os.path.islink(src)
             # A trailing / still means folders only, as in glob and .gitignore.
             if pat.endswith("/") and not folder:
-                continue
-            # Only what git ignores: never shadow or add to what the branch tracks.
-            if subprocess.run(["git", "check-ignore", "-q", "--", rel + ("/" if folder else "")], cwd=r["top"]).returncode:
                 continue
             try:
                 if folder:

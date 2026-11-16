@@ -24,7 +24,7 @@ k ssh://git@GitHub.com:22/Acme/demo/ github.com/Acme/demo
 k ../up "$T/up"
 git -C "$T/repo" remote set-url origin git@github.com:acme/demo.git
 
-# The main checkout: .env, .config/ and node_modules/ ignored, AGENTS.md tracked.
+# The main checkout: .env, .config/ and node_modules/ ignored, AGENTS.md tracked, notes.txt neither.
 cd "$T/repo"
 printf '.env*\n.config/\nnode_modules/\n' > .gitignore
 echo tracked > AGENTS.md
@@ -39,9 +39,13 @@ wt "$T/w1" -b w1
 grep -q 'copied .env, .env.local$' "$T/err" || fail "summary: $(cat "$T/err")"
 
 # "default" applies to every repo without its own entry; a folder needs no trailing /.
-printf '%s' '{"copy": [".config"]}' | "$BIN" set default
+# Listed files copy even when git doesn't ignore them, but a file the branch has stays as it is.
+printf '%s' '{"copy": [".config", "notes.txt", "AGENTS.md"]}' | "$BIN" set default
+echo changed > AGENTS.md
 wt "$T/w1b" -b w1b
+git checkout -q AGENTS.md
 [ -f "$T/w1b/.config/sub/f" ] && [ ! -e "$T/w1b/.env" ] || fail "default entry"
+[ -f "$T/w1b/notes.txt" ] && [ "$(cat "$T/w1b/AGENTS.md")" = tracked ] || fail "unignored copy"
 "$BIN" rm default
 
 # A repo entry: its copy replaces the builtin one, commands run in the background with WT_* set.
