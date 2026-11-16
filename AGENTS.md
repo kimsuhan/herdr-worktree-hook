@@ -47,7 +47,10 @@ checkout, run setup commands in the background), plus a Herdr app panel for it. 
 
 - Any change to `bin/herdr-worktree-hook` is a release, since the mod downloads it by tag and checksum:
   bump `VERSION`, set `CLI` in `main.js` to the new version and the file's sha256 (`./test.sh` fails
-  until they match), push, tag `vX.Y.Z` on `main` and run `gh release create vX.Y.Z --generate-notes`.
+  until they match), push, tag `vX.Y.Z` on `main` and run `gh release create vX.Y.Z --notes-file -`.
+  Notes are in English: one line on what changed for the user, bullets for the behavior and any catch,
+  how to update (press the panel's `Install` again, or pull a clone), then the `**Full Changelog**:`
+  compare link from the previous tag.
   Changes outside `bin/` ship from `main` untagged.
 
 ## Sharing the mod
