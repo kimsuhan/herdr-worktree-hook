@@ -5,7 +5,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
-import { exec, home, theme, settings, spaces, panes, focused, notify, readTextFile, watchFolder } from "herdr";
+import { checking, exec, home, theme, settings, spaces, panes, focused, notify, readTextFile, watchFolder } from "herdr";
 
 const BIN = "herdr-worktree-hook";
 // The CLI this mod fetches when none is on PATH: bin/herdr-worktree-hook at tag v<CLI.version>.
@@ -49,6 +49,7 @@ export default class WorktreeHook extends View {
     this.view = "main"; // main | form
     this.open = null; // the run whose log is shown
     this.known = null; // run ids already seen, to toast only new failures
+    if (checking()) return; // a check runs init() for real: no download, no CLI calls, no watchers
     cx.spawn(async (cx) => {
       try { this.bin = await this.locate(); } catch (e) { this.error = String(e.message ?? e); }
       await this.refresh(cx);

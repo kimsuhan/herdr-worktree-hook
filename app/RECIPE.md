@@ -101,7 +101,7 @@ Top to bottom:
   `worktree-hook.svg`, a 24×24 stroked icon (two commits on a branch line, a third off to the side, a
   check mark) for a tab bar button. No layout and no keys.
 - `gpui-kit` (`View`, `div`, `svg`), `gpui-base` (`v_flex`, `h_flex`, `TextareaState`, `Textarea`).
-- `herdr`: `exec`, `home`, `theme`, `settings`, `spaces`, `panes`, `focused`, `notify`,
+- `herdr`: `checking`, `exec`, `home`, `theme`, `settings`, `spaces`, `panes`, `focused`, `notify`,
   `readTextFile`, `watchFolder`.
 - Art: besides its own icon, Herdr's from the shipped `mods/workspace-chrome/`: `git-branch`,
   `square-pen`, `folder`, `chevron-left`, `chevron-right`, `chevron-down`, and `spinner` with
@@ -119,6 +119,8 @@ Top to bottom:
 ## Watch out
 
 - `exec` has no stdin: save with `exec("sh", ["-c", 'printf %s "$2" | "$1" set "$3"', "sh", bin, json, key])`.
+- `init()` runs for real during `herdr-app check`: return before finding the CLI when `checking()` is
+  true, so a check never downloads, calls the CLI or watches folders.
 - Find the CLI once at start: `herdr-worktree-hook version` on PATH (a clone someone linked), else the
   pinned copy. `main.js` holds `CLI = { version, sha256 }`; a shell script given to
   `exec("sh", ["-c", script, "sh", version, sha256])` returns at once if
