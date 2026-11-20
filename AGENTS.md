@@ -29,6 +29,9 @@ checkout, run setup commands in the background), plus a Herdr app panel for it. 
 - Its one file write: with no CLI on `PATH`, it downloads `bin/herdr-worktree-hook` at tag
   `v<CLI.version>` into `~/.local/share/herdr-worktree-hook/<version>/`, kept only if it matches
   `CLI.sha256` in `main.js`. It never runs `install` by itself; the panel's button does.
+- Its network besides that download: at most once a day `releases/latest` from GitHub's API, kept in
+  shared `worktree-hook.update`. A newer tag than `CLI.version` shows `Update to` in the header, which
+  hands an agent `updatePrompt` in a new tab. The tag must stay a plain `vX.Y.Z`: it goes into the prompt.
 
 ## After a change
 
@@ -52,6 +55,9 @@ checkout, run setup commands in the background), plus a Herdr app panel for it. 
   how to update (press the panel's `Install` again, or pull a clone), then the `**Full Changelog**:`
   compare link from the previous tag.
   Changes outside `bin/` ship from `main` untagged.
+- The tag is what installed panels compare `CLI.version` with, so publishing a release makes every older
+  panel show `Update to`. A mod-only change that should reach people needs a release too: bump the CLI's
+  `VERSION` with it.
 
 ## Sharing the mod
 

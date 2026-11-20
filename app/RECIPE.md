@@ -17,9 +17,11 @@ install: copy `mods/worktree-hook/` and the panel brings the rest. When `herdr-w
 `post-checkout` hook to `~/.gitconfig`, pointing at that copy. Nothing touches git config before that
 click.
 
-The mod **reaches the network** once: `raw.githubusercontent.com` for that one file, only when the CLI
-isn't found. It **runs programs**: `herdr-worktree-hook` for every read and write, `sh` to pipe JSON
-into it, and `sh`, `curl`, `sha256sum` or `shasum` for the download. It **writes files outside its
+The mod **reaches the network** for two things: `raw.githubusercontent.com` for that one file, only when
+the CLI isn't found, and at most once a day one GET to `api.github.com` for this repo's latest release
+(no token, nothing about you). It **runs programs**: `herdr-worktree-hook` for every read and write, `sh` to pipe JSON
+into it, and `sh`, `curl`, `sha256sum` or `shasum` for the download. Its `Update to` button starts the
+first installed agent in a new tab with an update prompt. It **writes files outside its
 folder** only for the download, the CLI file above. It **reads files outside its folder**: the run
 logs under `~/.local/state/herdr/plugins/kimsuhan.worktree-hook/runs/`.
 
@@ -30,7 +32,8 @@ Top to bottom:
 
 - **Header**, 42px, 14px side padding, bottom border: the mod's icon (15px, `muted`), "Worktree Hook"
   (semibold), then at the right in 11px a 6px dot and "git 2.54" (`ansi2` dot, `dim` text) or
-  "not installed" (both `blocked`). In the form view a 26px `‹` button (`chevron-left`, `hover`
+  "not installed" (both `blocked`). Between the title and the dot, only when a newer release is out and
+  the list is shown, a solid `Update to v<x.y.z>` button. In the form view a 26px `‹` button (`chevron-left`, `hover`
   background) replaces the icon.
 - **Banner**, only while the hook isn't in git config: `blocked` at 13% alpha (`+ "22"`), 12px text
   "The git hook isn't installed: new worktrees aren't set up." wrapping beside a solid `Install` button.
@@ -94,6 +97,12 @@ Top to bottom:
   body "exit 1 · <repo key>", level error, whichever repo it's in: the list is filtered, the
   notifications aren't. Runs that had failed before it opened don't.
 - Changes made elsewhere (the CLI, editing `config.json`, a new worktree) show up by themselves.
+- `Update to v<x.y.z>` copies a prompt to the clipboard and starts the first installed agent with it in
+  a new tab named "Update Worktree Hook" in Herdr's folder (no agent: a notification says the prompt was
+  copied). The prompt has the agent read Herdr's `AGENTS.md`, read the release's `app/mods/worktree-hook/`
+  at that tag, copy it over the installed mod, run `herdr-app check` and `herdr-app status`, move the git
+  hook to the new CLI (pull a linked clone; for a downloaded copy, ask, then run the new copy's
+  `install` once the panel has fetched it) and sum up the release notes.
 
 ## Built from
 
@@ -101,8 +110,8 @@ Top to bottom:
   `worktree-hook.svg`, a 24×24 stroked icon (two commits on a branch line, a third off to the side, a
   check mark) for a tab bar button. No layout and no keys.
 - `gpui-kit` (`View`, `div`, `svg`), `gpui-base` (`v_flex`, `h_flex`, `TextareaState`, `Textarea`).
-- `herdr`: `checking`, `exec`, `home`, `theme`, `settings`, `spaces`, `panes`, `focused`, `notify`,
-  `readTextFile`, `watchFolder`.
+- `herdr`: `checking`, `exec`, `home`, `appHome`, `theme`, `settings`, `spaces`, `panes`, `focused`, `notify`,
+  `readTextFile`, `watchFolder`, `shared`, `setShared`, `knownAgents`, `run` (`tab.new`).
 - Art: besides its own icon, Herdr's from the shipped `mods/workspace-chrome/`: `git-branch`,
   `square-pen`, `folder`, `chevron-left`, `chevron-right`, `chevron-down`, and `spinner` with
   `.spin(900)` while a run is going.
@@ -129,6 +138,13 @@ Top to bottom:
   to a temp folder, compares its sha256 (`sha256sum`, else `shasum -a 256`) and only on a match makes it
   executable and moves it there. A mismatch or a failed download is the error line, kept until the mod
   reloads.
+- The update check: `GET https://api.github.com/repos/kimsuhan/herdr-worktree-hook/releases/latest`
+  (`Accept: application/vnd.github+json`, a `User-Agent`), from `init` after the `checking()` return and
+  then hourly, asking only when shared `worktree-hook.update` (`{ checked, latest }`) is a day old.
+  `checked` is written before the request, so copies starting together ask once; a failure sets it a day
+  less an hour back, so it retries in an hour. Keep `tag_name` only if it matches `^v?\d+\.\d+\.\d+$`
+  (it goes into a prompt). Tags are cut only for CLI changes, so `CLI.version` is the installed version:
+  show the button when `latest` is newer by number.
 - Watch the folder of `ls`'s `config` and its `state` folder with `watchFolder` and reload on each
   change, then `cx.sleep(1000)`: a run writing its log is a stream of changes. A folder that doesn't
   exist yet rejects the watch, so poll every 5 seconds instead.

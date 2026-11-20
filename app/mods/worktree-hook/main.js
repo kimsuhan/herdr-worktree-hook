@@ -5,7 +5,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea } from "gpui-base";
-import { checking, exec, home, theme, settings, spaces, panes, focused, notify, readTextFile, watchFolder } from "herdr";
+import { checking, exec, home, appHome, theme, settings, spaces, panes, focused, notify, readTextFile, watchFolder, shared, setShared, knownAgents, run } from "herdr";
 
 const BIN = "herdr-worktree-hook";
 // The CLI this mod fetches when none is on PATH: bin/herdr-worktree-hook at tag v<CLI.version>.
@@ -19,6 +19,49 @@ curl -fsSL "https://raw.githubusercontent.com/kimsuhan/herdr-worktree-hook/v$v/b
 if command -v sha256sum >/dev/null 2>&1; then have=$(sha256sum "$tmp/cli" | cut -d' ' -f1); else have=$(shasum -a 256 "$tmp/cli" | cut -d' ' -f1); fi
 [ "$have" = "$sum" ] || { echo "herdr-worktree-hook $v: checksum mismatch, not installed" >&2; exit 1; }
 chmod +x "$tmp/cli" && mkdir -p "$dest" && mv "$tmp/cli" "$dest/herdr-worktree-hook"`;
+// A newer release: at most once a day one GET to GitHub's public releases API (no token, nothing about
+// the person), kept in shared `worktree-hook.update` ({ checked, latest }) so every copy and a restart see it.
+// A tag is cut only for a CLI change (AGENTS.md, Versions), so CLI.version is this copy's version too.
+const REPO = "kimsuhan/herdr-worktree-hook", UPDATE = "worktree-hook.update";
+const HOUR = 3_600_000;
+const newer = (a, b) => {
+  const parts = (v) => String(v).replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+  return false;
+};
+const available = () => { const l = shared(UPDATE)?.latest; return l && newer(l, CLI.version) ? l : null; };
+async function checkUpdate(now = Date.now()) {
+  const DAY = 86_400_000;
+  const s = shared(UPDATE) ?? {};
+  const since = now - (s.checked ?? 0);
+  if (since >= 0 && since < DAY) return; // a time in the future (a wrong clock) counts as long ago
+  setShared(UPDATE, { ...s, checked: now }); // before asking, so other copies starting now don't ask too
+  try {
+    const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "herdr-worktree-hook" },
+    });
+    if (!r.ok) throw new Error(`GitHub answered ${r.status}`);
+    const tag = (await r.json())?.tag_name;
+    // The tag goes into an agent's prompt: only a plain version is kept.
+    if (/^v?\d+\.\d+\.\d+$/.test(tag ?? "") && tag !== s.latest) setShared(UPDATE, { checked: now, latest: tag });
+  } catch {
+    setShared(UPDATE, { ...s, checked: now - DAY + HOUR }); // offline: asked again in an hour
+  }
+}
+// What the agent is asked: copy the release over the mod, then move the git hook to the new CLI.
+function updatePrompt(tag) {
+  const h = tilde(appHome()), dir = `${h}/mods/worktree-hook`, v = tag.replace(/^v/, "");
+  return `Update Worktree Hook, the Herdr app mod in ${dir}, from v${CLI.version} to ${tag}.
+
+1. Read ${h}/AGENTS.md first.
+2. Get app/mods/worktree-hook/ of https://github.com/${REPO} at tag ${tag}. Read every file before putting anything in, and tell me if the release does something the installed copy doesn't (runs other programs, reaches the network, reads or writes files outside its folder).
+3. Copy those files over ${dir}. Leave files the release doesn't have as they are.
+4. Run "herdr-app check ${dir}" and "herdr-app status"; the errors list must be empty.
+5. The git hook: \`git config --global --get hook.herdr-worktree-hook.command\` says which CLI it runs. If that is a git clone of ${REPO}, pull it. If it is a copy under ~/.local/share/herdr-worktree-hook/, the panel downloads ${v} when it reloads: wait until ~/.local/share/herdr-worktree-hook/${v}/herdr-worktree-hook exists, then ask me and run its \`install\`.
+6. Tell me in a few lines what changed since v${CLI.version}, from the notes of each release after it: https://github.com/${REPO}/releases
+`;
+}
 const FIELDS = [
   ["copy", "COPY", "Paths in the main checkout, one per line. Globs work; a folder copies with its files. Never overwrites what the worktree has."],
   ["run", "RUN", "Commands, one per line, run in order in the new worktree. The first failure stops the rest."],
@@ -50,6 +93,8 @@ export default class WorktreeHook extends View {
     this.open = null; // the run whose log is shown
     this.known = null; // run ids already seen, to toast only new failures
     if (checking()) return; // a check runs init() for real: no download, no CLI calls, no watchers
+    cx.spawn(() => checkUpdate()); // its setShared redraws every copy
+    cx.timer.every(HOUR, (cx) => cx.spawn(() => checkUpdate()));
     cx.spawn(async (cx) => {
       try { this.bin = await this.locate(); } catch (e) { this.error = String(e.message ?? e); }
       await this.refresh(cx);
@@ -216,7 +261,7 @@ export default class WorktreeHook extends View {
   }
 
   header(t) {
-    const ok = this.list?.installed;
+    const ok = this.list?.installed, tag = this.view === "main" && available();
     return h_flex().h(42).flex_none().pl(this.view === "main" ? 14 : 8).pr(14).gap(8).items_center().border_b(1).border_color(t.border)
       .child(this.view === "main" ? svg("mods/worktree-hook/worktree-hook.svg").size(15).flex_none().text_color(t.muted)
         : h_flex().id("back").size(26).flex_none().items_center().justify_center().rounded(7).cursor_pointer().hover((s) => s.bg(t.hover))
@@ -224,9 +269,21 @@ export default class WorktreeHook extends View {
           .child(svg(ICON("chevron-left")).size(14).text_color(t.muted)))
       .child(div().font_semibold().child("Worktree Hook"))
       .child(div().flex_1())
+      .when(Boolean(tag), (el) => el.child(this.button("update", `Update to ${tag}`, t, (cx) => this.askUpdate(tag, cx), { solid: true })))
       .when(Boolean(this.list), (el) => el.child(h_flex().gap(6).items_center().text_size(11).text_color(ok ? t.dim : t.blocked)
         .child(div().size(6).rounded(3).flex_none().bg(ok ? t.ansi2 : t.blocked))
         .child(ok ? `git ${this.list.git}` : "not installed")));
+  }
+
+  // The prompt is copied, and the first installed agent gets it in a new tab in Herdr's folder.
+  askUpdate(tag, cx) {
+    const text = updatePrompt(tag);
+    cx.write_to_clipboard(text);
+    cx.spawn(async () => {
+      const agent = (await knownAgents().catch(() => [])).find((a) => a.installed);
+      if (agent) run("tab.new", { name: "Update Worktree Hook", folder: appHome(), argv: agent.run, task: text });
+      else notify({ title: "Update prompt copied", body: "No agent is installed: paste it to one.", level: "info" });
+    });
   }
 
   banner(t) {

@@ -118,6 +118,10 @@ It uses the CLI on `PATH`. Without one, it downloads the CLI of its pinned relea
 sha256) into `~/.local/share/herdr-worktree-hook/<version>/`, and its `Install` button adds the hook,
 so copying the mod is enough. Spaces on other machines aren't supported yet.
 
+Once a day the panel asks GitHub for the latest release (one request, no token). When a newer one is
+out, an `Update to v<x.y.z>` button in its header starts your agent in a new tab with a prompt that
+copies the release over the mod and moves the hook to the new CLI.
+
 ## Development
 
 `./test.sh` creates real worktrees in a temp folder, isolated from your git and Herdr settings.
